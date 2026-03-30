@@ -33,7 +33,7 @@ cargo test
 | `RUSVEL_SMTP_HOST` | SMTP for outreach emails | Mock adapter |
 | `RUSVEL_SMTP_PORT` | SMTP port | -- |
 | `RUSVEL_SMTP_USER` | SMTP username | -- |
-| `RUSVEL_SMTP_PASS` | SMTP password | -- |
+| `RUSVEL_SMTP_PASSWORD` | SMTP password | -- |
 | `RUSVEL_TELEGRAM_BOT_TOKEN` | Telegram notifications | Disabled |
 | `RUSVEL_FLOW_PARALLEL_EVALUATE` | Enable parallel flow nodes | `0` |
 | `ANTHROPIC_API_KEY` | Claude API provider | Claude CLI fallback |

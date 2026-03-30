@@ -115,7 +115,7 @@ The host (`rusvel-app`) collects manifests from all 14 `dept-*` crates at boot t
 |----------|---------|
 | `ANTHROPIC_API_KEY` | Claude API authentication |
 | `OPENAI_API_KEY` | OpenAI API authentication |
-| `RUSVEL_DB_PATH` | Override database file path |
+| `RUSVEL_DB_PATH` | *Not implemented in Rust binary* — DB file is `{data_dir}/rusvel.db` (default `~/.rusvel/rusvel.db`). |
 | `RUSVEL_CONFIG_DIR` | Override config directory (default: `~/.rusvel`) |
 | `RUST_LOG` | Logging level (e.g., `info`, `debug`, `rusvel_api=debug`) |
 | `RUSVEL_RATE_LIMIT` | API rate limit in requests/second (default: 100) |

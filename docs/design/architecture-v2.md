@@ -30,7 +30,7 @@
 └──────────────────────────┬────────────────────────────────┘
                        │
 ┌──────────────────────┴─────────────────────────┐
-│         DEPARTMENT REGISTRY (12 depts)           │
+│         DEPARTMENT REGISTRY (14 depts)           │
 │  DepartmentApp + DepartmentManifest (ADR-014)    │
 │  String IDs everywhere (EngineKind removed)       │
 │  6 parameterized /api/dept/{dept}/* routes        │

@@ -231,7 +231,7 @@ Edition: **2024**; workspace lint: deny `unsafe_code`, warn clippy pedantic (wit
 
 ### How it is stored
 
-- **SQLite** (path configurable, e.g. `RUSVEL_DB_PATH` in CI): events, objects, sessions, jobs, metrics — via **`StoragePort`** facades.
+- **SQLite** (default `~/.rusvel/rusvel.db` beside the app data dir; **`RUSVEL_DB_PATH` is not read by the binary today**): events, objects, sessions, jobs, metrics — via **`StoragePort`** facades.
 - **LanceDB** (on disk under data dir): vector tables for embedding search.
 - **Config:** TOML files + layered overrides (`rusvel-config`).
 

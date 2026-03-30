@@ -20,6 +20,8 @@ cargo run -- finance status    # Department one-shot command
 cargo run -- growth list       # List department items
 ```
 
+**Runtime security & env:** HTTP bind, API tokens, DB SQL lock, MCP auth, `VITE_RUSVEL_API_TOKEN` — see [`docs/operators/security-hardening.md`](docs/operators/security-hardening.md).
+
 ## Architecture
 
 Hexagonal (ports & adapters). See `docs/design/architecture-v2.md`.

@@ -38,3 +38,35 @@ Use this on shared or production-adjacent hosts so the DB browser cannot mutate 
 | `RUSVEL_MCP_HTTP_TOKEN` | Shared secret for MCP HTTP bearer. |
 
 If auth is disabled and the server binds outside loopback, startup logs a `rusvel_security` warning.
+
+## LLM and outbound
+
+| Variable | Purpose |
+|----------|---------|
+| `ANTHROPIC_API_KEY` | Claude HTTP API |
+| `OPENAI_API_KEY` | OpenAI API |
+| `OLLAMA_HOST` | Ollama base URL (default `http://localhost:11434`) |
+
+## GTM / email (outreach)
+
+| Variable | Purpose |
+|----------|---------|
+| `RUSVEL_SMTP_HOST` | SMTP host (unset = mock adapter) |
+| `RUSVEL_SMTP_PORT` | Port (default 587) |
+| `RUSVEL_SMTP_USER` | Auth username |
+| `RUSVEL_SMTP_PASSWORD` | Auth password |
+| `RUSVEL_SMTP_FROM` | From address |
+
+## Common misconceptions (docs drift)
+
+| Variable | Status |
+|----------|--------|
+| `RUSVEL_DB_PATH` | **Not read** by `rusvel-app` — database is `{data_dir}/rusvel.db`. |
+| `RUSVEL_SEED_DEV` | **Not read** by the binary; seed flows in docs are aspirational until implemented. |
+
+## Config vs logging
+
+| Variable / key | Purpose |
+|----------------|---------|
+| `RUST_LOG` | Tracing filter when set (wins over TOML). |
+| `log.level` in `~/.rusvel/config.toml` | Used when `RUST_LOG` is unset. |
