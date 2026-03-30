@@ -845,7 +845,10 @@ async fn main() -> Result<()> {
 
     // 4. Concrete adapters
     let db: Arc<Database> = Arc::new(Database::open(data_dir.join("rusvel.db"))?);
-    let llm_multi = llm_bootstrap::compose_llm_multi();
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    let storage_for_boot: Arc<dyn rusvel_core::ports::StoragePort> = db.clone();
+    let operator_prefs = rusvel_api::operator_runtime::load_operator_prefs(&storage_for_boot).await;
+    let (llm_multi, claude_transport_cli) = llm_bootstrap::compose_llm_multi(&operator_prefs);
     let base_llm: Arc<dyn rusvel_core::ports::LlmPort> = Arc::new(llm_multi);
     let metrics_store: Arc<dyn MetricStore> = db.clone() as Arc<dyn MetricStore>;
     let llm: Arc<dyn rusvel_core::ports::LlmPort> =
@@ -957,21 +960,26 @@ async fn main() -> Result<()> {
     );
     let config_port: Arc<dyn ConfigPort> = config.clone();
     let deploy: Arc<dyn DeployPort> = Arc::new(rusvel_deploy::FlyDeployPort::new(config_port));
-    let terminal_for_flow: Arc<dyn rusvel_core::ports::TerminalPort> =
-        Arc::new(TerminalManager::new(events.clone(), db.clone()));
+    let terminal_for_flow: Option<Arc<dyn rusvel_core::ports::TerminalPort>> =
+        match std::env::var("RUSVEL_TERMINAL_DISABLE").ok().as_deref() {
+            Some("1") | Some("true") => {
+                tracing::info!("RUSVEL_TERMINAL_DISABLE: PTY terminal platform disabled");
+                None
+            }
+            _ => Some(Arc::new(TerminalManager::new(events.clone(), db.clone()))),
+        };
     rusvel_builtin_tools::register_delegate_tool(
         &tool_registry,
         agent_runtime.clone(),
-        Some(terminal_for_flow.clone()),
+        terminal_for_flow.clone(),
     )
     .await;
-    rusvel_builtin_tools::register_terminal_tools(&tool_registry, Some(terminal_for_flow.clone()))
-        .await;
+    rusvel_builtin_tools::register_terminal_tools(&tool_registry, terminal_for_flow.clone()).await;
     let flow_engine = Arc::new(flow_engine::FlowEngine::new(
         db.clone() as Arc<dyn StoragePort>,
         events.clone(),
         agent_for_flow,
-        Some(terminal_for_flow.clone()),
+        terminal_for_flow.clone(),
         Some(browser_port.clone()),
     ));
     let gtm_engine = Arc::new(gtm_engine::GtmEngine::new(
@@ -1072,8 +1080,7 @@ async fn main() -> Result<()> {
     let outreach_email_worker = outreach_email.clone();
     let forge_worker = forge.clone();
     let browser_for_jobs: Arc<dyn rusvel_core::ports::BrowserPort> = browser_port.clone();
-
-    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    let terminal_for_jobs = terminal_for_flow.clone();
 
     let db_for_job_sweep = db.clone();
     let mut worker_rx = shutdown_rx.clone();
@@ -1321,6 +1328,48 @@ async fn main() -> Result<()> {
                                         Err(e)
                                     }
                                 }
+                            } else if let Some(trigger) =
+                                rusvel_api::automation::parse_automation_trigger_from_cron(
+                                    &event_kind,
+                                    &payload,
+                                )
+                            {
+                                match rusvel_api::automation::worker_app_state() {
+                                    Some(api_state) => {
+                                        match rusvel_api::automation::dispatch_automation_trigger(
+                                            api_state,
+                                            job.session_id,
+                                            trigger,
+                                        )
+                                        .await
+                                        {
+                                            Ok(out) => Ok(Some(JobResult {
+                                                output: out,
+                                                metadata: serde_json::json!({
+                                                    "source": "cron",
+                                                    "automation": true,
+                                                }),
+                                            })),
+                                            Err(e) => {
+                                                tracing::error!(
+                                                    job_id = %job_id,
+                                                    error = %e,
+                                                    "automation dispatch failed"
+                                                );
+                                                Err(rusvel_core::error::RusvelError::Validation(e))
+                                            }
+                                        }
+                                    }
+                                    None => {
+                                        tracing::error!(
+                                            job_id = %job_id,
+                                            "automation cron: worker AppState not registered"
+                                        );
+                                        Err(rusvel_core::error::RusvelError::Validation(
+                                            "automation: app state not ready".into(),
+                                        ))
+                                    }
+                                }
                             } else {
                                 let event = Event {
                                     id: EventId::new(),
@@ -1345,6 +1394,56 @@ async fn main() -> Result<()> {
                                     })),
                                     Err(e) => Err(e),
                                 }
+                            }
+                        }
+                        JobKind::Custom(ref s)
+                            if s == rusvel_api::automation::AUTOMATION_DISPATCH_JOB_KIND =>
+                        {
+                            let trigger_res: Result<
+                                rusvel_core::domain::AutomationTriggerPayload,
+                                rusvel_core::error::RusvelError,
+                            > = job
+                                .payload
+                                .get("trigger")
+                                .cloned()
+                                .ok_or_else(|| {
+                                    rusvel_core::error::RusvelError::Validation(
+                                        "automation job missing trigger".into(),
+                                    )
+                                })
+                                .and_then(|trigger_v| {
+                                    serde_json::from_value(trigger_v).map_err(|e| {
+                                        rusvel_core::error::RusvelError::Validation(format!(
+                                            "invalid automation trigger: {e}"
+                                        ))
+                                    })
+                                });
+                            match trigger_res {
+                                Ok(trigger) => {
+                                    match rusvel_api::automation::worker_app_state() {
+                                        Some(api_state) => {
+                                            match rusvel_api::automation::dispatch_automation_trigger(
+                                                api_state,
+                                                job.session_id,
+                                                trigger,
+                                            )
+                                            .await
+                                            {
+                                                Ok(out) => Ok(Some(JobResult {
+                                                    output: out,
+                                                    metadata: serde_json::json!({ "automation": true }),
+                                                })),
+                                                Err(e) => Err(
+                                                    rusvel_core::error::RusvelError::Validation(e),
+                                                ),
+                                            }
+                                        }
+                                        None => Err(rusvel_core::error::RusvelError::Validation(
+                                            "automation: app state not ready".into(),
+                                        )),
+                                    }
+                                }
+                                Err(e) => Err(e),
                             }
                         }
                         JobKind::Custom(ref s) if s == "forge.pipeline" => {
@@ -1438,6 +1537,27 @@ async fn main() -> Result<()> {
 
                     match job_finish {
                         Ok(Some(job_result)) => {
+                            if let Some(ref term) = terminal_for_jobs {
+                                let sid = job.session_id;
+                                let kind_str = format!("{:?}", job.kind);
+                                let line = format!(
+                                    "job {} done ({})",
+                                    job_id,
+                                    kind_str.replace(' ', "")
+                                );
+                                if let Ok(panes) = term.list_panes_for_session(&sid).await {
+                                    if let Some(p) = panes.iter().find(|p| {
+                                        matches!(
+                                            p.source,
+                                            rusvel_core::terminal::PaneSource::Shell
+                                                | rusvel_core::terminal::PaneSource::Department(_)
+                                        )
+                                    }) {
+                                        let msg = format!("\r\n\x1b[36m[rusvel:job]\x1b[0m {line}\r\n");
+                                        let _ = term.inject_pane_output(&p.id, msg.as_bytes()).await;
+                                    }
+                                }
+                            }
                             if let Err(e) = job_port.complete(&job_id, job_result).await {
                                 tracing::error!(job_id = %job_id, error = %e, "Failed to mark job complete");
                             }
@@ -1588,13 +1708,16 @@ async fn main() -> Result<()> {
             .map(SessionId::from_uuid)
             .unwrap_or_else(SessionId::new);
 
-        let terminal_panes: Vec<rusvel_tui::TuiTerminalPane> = terminal_for_flow
-            .list_panes_for_session(&session_id)
-            .await
-            .unwrap_or_default()
-            .iter()
-            .map(rusvel_tui::TuiTerminalPane::from_pane)
-            .collect();
+        let terminal_panes: Vec<rusvel_tui::TuiTerminalPane> = match &terminal_for_flow {
+            Some(t) => t
+                .list_panes_for_session(&session_id)
+                .await
+                .unwrap_or_default()
+                .iter()
+                .map(rusvel_tui::TuiTerminalPane::from_pane)
+                .collect(),
+            None => vec![],
+        };
 
         let latest_brief_summary = forge
             .latest_brief(&session_id)
@@ -1669,6 +1792,8 @@ async fn main() -> Result<()> {
         let rusvel_base: Arc<dyn rusvel_core::ports::RusvelBasePort> =
             Arc::new(rusvel_db::RusvelBaseAdapter(db.clone()));
 
+        let http_addr = http_listen_addr()?;
+
         let state = AppState {
             forge: forge.clone(),
             code_engine: Some(code_engine.clone()),
@@ -1690,15 +1815,21 @@ async fn main() -> Result<()> {
             deploy: Some(deploy),
             agent_runtime: agent_runtime.clone(),
             tools: tools.clone(),
-            terminal: Some(terminal_for_flow.clone()),
+            terminal: terminal_for_flow.clone(),
             cdp: Some(cdp_client.clone()),
             auth: rusvel_api::auth::AuthConfig::from_env(),
+            credentials: auth.clone(),
             webhook_receiver: webhook_receiver.clone(),
             cron_scheduler: cron_scheduler.clone(),
             context_pack_cache: Arc::new(rusvel_api::ContextPackCache::default()),
             channel: outbound_channel,
             boot_time,
             failed_departments: failed_departments.clone(),
+            data_dir: data_dir.clone(),
+            http_listen: http_addr.to_string(),
+            claude_transport_cli,
+            operator_prefs: operator_prefs.clone(),
+            shutdown_tx: Some(shutdown_tx.clone()),
         };
 
         let frontend_dir = [
@@ -1726,7 +1857,7 @@ async fn main() -> Result<()> {
         let mcp_srv = Arc::new(RusvelMcp::new(forge.clone(), sessions.clone()));
         let router =
             rusvel_mcp::http::nest_mcp_http(base, mcp_srv, rusvel_mcp::http::McpAuth::from_env());
-        let addr = http_listen_addr()?;
+        let addr = http_addr;
         let api_auth = rusvel_api::auth::AuthConfig::from_env();
         warn_open_api_exposure(&addr, &api_auth);
         warn_mcp_http_exposure(&addr);
@@ -1808,6 +1939,8 @@ async fn main() -> Result<()> {
         let rusvel_base: Arc<dyn rusvel_core::ports::RusvelBasePort> =
             Arc::new(rusvel_db::RusvelBaseAdapter(db.clone()));
 
+        let http_addr = http_listen_addr()?;
+
         let state = AppState {
             forge: forge.clone(),
             code_engine: Some(code_engine.clone()),
@@ -1829,15 +1962,21 @@ async fn main() -> Result<()> {
             deploy: Some(deploy),
             agent_runtime: agent_runtime.clone(),
             tools: tools.clone(),
-            terminal: Some(terminal_for_flow.clone()),
+            terminal: terminal_for_flow.clone(),
             cdp: Some(cdp_client.clone()),
             auth: rusvel_api::auth::AuthConfig::from_env(),
+            credentials: auth.clone(),
             webhook_receiver: webhook_receiver.clone(),
             cron_scheduler: cron_scheduler.clone(),
             context_pack_cache: Arc::new(rusvel_api::ContextPackCache::default()),
             channel: outbound_channel,
             boot_time,
             failed_departments: failed_departments.clone(),
+            data_dir: data_dir.clone(),
+            http_listen: http_addr.to_string(),
+            claude_transport_cli,
+            operator_prefs: operator_prefs.clone(),
+            shutdown_tx: Some(shutdown_tx.clone()),
         };
 
         // Look for frontend build in known locations (filesystem first)
@@ -1864,7 +2003,7 @@ async fn main() -> Result<()> {
             tracing::warn!("No frontend found — UI will not be available");
         }
         let router = rusvel_api::build_router_with_frontend(state, frontend_dir);
-        let addr = http_listen_addr()?;
+        let addr = http_addr;
         let api_auth = rusvel_api::auth::AuthConfig::from_env();
         warn_open_api_exposure(&addr, &api_auth);
         warn_mcp_http_exposure(&addr);

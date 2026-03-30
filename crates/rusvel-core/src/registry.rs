@@ -5,6 +5,7 @@
 //! Adding a department = adding a TOML block. Zero code changes.
 
 use crate::config::LayeredConfig;
+use crate::department::DepartmentTerminalPrefs;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -29,6 +30,9 @@ pub struct DepartmentDef {
     pub quick_actions: Vec<QuickAction>,
     #[serde(default)]
     pub default_config: LayeredConfig,
+    /// PTY defaults for `/api/terminal/dept/:id` (merged with env; see operator docs).
+    #[serde(default)]
+    pub terminal: DepartmentTerminalPrefs,
 }
 
 /// Registry of all departments.
@@ -79,6 +83,7 @@ impl DepartmentRegistry {
                         QuickAction { label: "Set new goal".into(), prompt: "Help me define a new strategic goal. Ask me for context and desired outcome.".into() },
                     ],
                     default_config: LayeredConfig::default(),
+                    terminal: DepartmentTerminalPrefs::default(),
                 },
                 DepartmentDef {
                     id: "code".into(),
@@ -102,6 +107,7 @@ impl DepartmentRegistry {
                         add_dirs: Some(vec![".".into()]),
                         ..Default::default()
                     },
+                    terminal: DepartmentTerminalPrefs::default(),
                 },
                 DepartmentDef {
                     id: "harvest".into(),
@@ -118,6 +124,7 @@ impl DepartmentRegistry {
                         QuickAction { label: "Draft proposal".into(), prompt: "Draft a proposal for an opportunity. Ask me for the gig details.".into() },
                     ],
                     default_config: LayeredConfig::default(),
+                    terminal: DepartmentTerminalPrefs::default(),
                 },
                 DepartmentDef {
                     id: "content".into(),
@@ -134,6 +141,7 @@ impl DepartmentRegistry {
                         QuickAction { label: "Content calendar".into(), prompt: "Show the content calendar for this week with scheduled and draft posts.".into() },
                     ],
                     default_config: LayeredConfig::default(),
+                    terminal: DepartmentTerminalPrefs::default(),
                 },
                 DepartmentDef {
                     id: "gtm".into(),
@@ -151,6 +159,7 @@ impl DepartmentRegistry {
                         QuickAction { label: "Generate invoice".into(), prompt: "Generate an invoice. Ask me for client details and line items.".into() },
                     ],
                     default_config: LayeredConfig::default(),
+                    terminal: DepartmentTerminalPrefs::default(),
                 },
                 DepartmentDef {
                     id: "finance".into(),
@@ -168,6 +177,7 @@ impl DepartmentRegistry {
                         QuickAction { label: "P&L report".into(), prompt: "Generate a profit & loss report by category.".into() },
                     ],
                     default_config: LayeredConfig::default(),
+                    terminal: DepartmentTerminalPrefs::default(),
                 },
                 DepartmentDef {
                     id: "product".into(),
@@ -184,6 +194,7 @@ impl DepartmentRegistry {
                         QuickAction { label: "Pricing analysis".into(), prompt: "Analyze current pricing tiers and suggest optimizations.".into() },
                     ],
                     default_config: LayeredConfig::default(),
+                    terminal: DepartmentTerminalPrefs::default(),
                 },
                 DepartmentDef {
                     id: "growth".into(),
@@ -200,6 +211,7 @@ impl DepartmentRegistry {
                         QuickAction { label: "Cohort report".into(), prompt: "Generate a cohort retention report with weekly/monthly trends.".into() },
                     ],
                     default_config: LayeredConfig::default(),
+                    terminal: DepartmentTerminalPrefs::default(),
                 },
                 DepartmentDef {
                     id: "distro".into(),
@@ -216,6 +228,7 @@ impl DepartmentRegistry {
                         QuickAction { label: "Distribution strategy".into(), prompt: "Analyze distribution channels and recommend new ones.".into() },
                     ],
                     default_config: LayeredConfig::default(),
+                    terminal: DepartmentTerminalPrefs::default(),
                 },
                 DepartmentDef {
                     id: "legal".into(),
@@ -232,6 +245,7 @@ impl DepartmentRegistry {
                         QuickAction { label: "IP review".into(), prompt: "Review intellectual property assets.".into() },
                     ],
                     default_config: LayeredConfig::default(),
+                    terminal: DepartmentTerminalPrefs::default(),
                 },
                 DepartmentDef {
                     id: "support".into(),
@@ -248,6 +262,7 @@ impl DepartmentRegistry {
                         QuickAction { label: "NPS survey".into(), prompt: "Analyze recent NPS survey results with score breakdown and themes.".into() },
                     ],
                     default_config: LayeredConfig::default(),
+                    terminal: DepartmentTerminalPrefs::default(),
                 },
                 DepartmentDef {
                     id: "infra".into(),
@@ -264,6 +279,7 @@ impl DepartmentRegistry {
                         QuickAction { label: "Incident report".into(), prompt: "Show open incidents with severity, timeline, and resolution status.".into() },
                     ],
                     default_config: LayeredConfig::default(),
+                    terminal: DepartmentTerminalPrefs::default(),
                 },
             ],
         }

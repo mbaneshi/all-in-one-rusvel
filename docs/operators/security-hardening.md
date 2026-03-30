@@ -16,6 +16,16 @@
 
 If **both** token env vars are unset, `/api/*` accepts requests without `Authorization`. On a **non-loopback** bind, startup logs a `rusvel_security` warning unless `RUSVEL_ALLOW_INSECURE_API=1`.
 
+## Runtime snapshot, operator prefs, and shutdown
+
+| Endpoint | Method | Auth (when tokens are set) | Purpose |
+|----------|--------|------------------------------|---------|
+| `/api/system/runtime` | GET | Admin or read token | In-process effective configuration (no secret values): process/HTTP summary, LLM wiring snapshot, integration booleans, subsystem registration, boot-time operator prefs, and a small **capabilities** list (labels + doc paths). |
+| `/api/system/operator-prefs` | PUT | Admin only | Persist operator preferences (e.g. `force_claude_cli`) in object store. Changes apply after a **full process restart**; the running LLM stack is not hot-reloaded. |
+| `/api/system/shutdown` | POST | Admin only | Triggers graceful shutdown (same signal path as Ctrl+C). Use with **systemd**, **Docker** restart policy, **launchd**, or a manual terminal restart. |
+
+Settings UI: **Control center** at `/settings/control` (tab under Settings).
+
 ## RusvelBase SQL console
 
 | Variable | Default | Purpose |

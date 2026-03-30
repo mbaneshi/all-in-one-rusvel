@@ -358,6 +358,7 @@ impl DepartmentRegistry {
                     })
                     .collect(),
                 default_config: m.default_config.clone(),
+                terminal: m.terminal.clone(),
             })
             .collect();
 

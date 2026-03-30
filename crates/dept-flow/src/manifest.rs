@@ -204,6 +204,7 @@ pub fn flow_manifest() -> DepartmentManifest {
 
         config_schema: serde_json::json!({}),
         default_config: LayeredConfig::default(),
+        terminal: DepartmentTerminalPrefs::default(),
     }
 }
 

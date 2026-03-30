@@ -280,6 +280,7 @@ pub async fn execute_flow_with_config(
                         node_id: node_id.to_string(),
                         execution_id: exec_id.to_string(),
                     },
+                    None,
                 )
                 .await
             {

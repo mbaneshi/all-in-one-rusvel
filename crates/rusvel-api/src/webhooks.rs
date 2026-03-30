@@ -6,18 +6,28 @@ use axum::Json;
 use axum::body::Bytes;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
-use rusvel_core::domain::{JobKind, NewJob};
+use rusvel_core::domain::{
+    AutomationTriggerPayload, JobKind, NewJob, AUTOMATION_WEBHOOK_EVENT_KIND,
+};
 use rusvel_core::error::RusvelError;
 use rusvel_core::id::SessionId;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::AppState;
+use crate::automation::AUTOMATION_DISPATCH_JOB_KIND;
 
 const SIGNATURE_HEADER: &str = "x-rusvel-signature";
 
 /// Register a webhook with this `event_kind` to enqueue a forge pipeline job (body: `session_id`, optional `def`).
 pub const FORGE_PIPELINE_WEBHOOK_KIND: &str = "forge.pipeline.requested";
+
+#[derive(Debug, Deserialize)]
+struct WebhookAutomationBody {
+    pub session_id: String,
+    #[serde(flatten)]
+    pub trigger: AutomationTriggerPayload,
+}
 
 #[derive(Debug, Deserialize)]
 pub struct CreateWebhookBody {
@@ -107,6 +117,41 @@ pub async fn receive_webhook(
                 metadata: json!({
                     "source": "webhook",
                     "event_id": outcome.event_id.to_string(),
+                }),
+                scheduled_at: None,
+            })
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    } else if outcome.event_kind == AUTOMATION_WEBHOOK_EVENT_KIND {
+        let body: WebhookAutomationBody = serde_json::from_value(outcome.body.clone()).map_err(
+            |_| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    "body must include session_id and automation fields (version, action, target_id)"
+                        .into(),
+                )
+            },
+        )?;
+        let sid = uuid::Uuid::parse_str(body.session_id.trim())
+            .map(SessionId::from_uuid)
+            .map_err(|_| (StatusCode::BAD_REQUEST, "invalid session_id".into()))?;
+        let trigger_val = serde_json::to_value(&body.trigger).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("serialize trigger: {e}"),
+            )
+        })?;
+        state
+            .jobs
+            .enqueue(NewJob {
+                session_id: sid,
+                kind: JobKind::Custom(AUTOMATION_DISPATCH_JOB_KIND.into()),
+                payload: json!({ "trigger": trigger_val }),
+                max_retries: 2,
+                metadata: json!({
+                    "source": "webhook",
+                    "event_id": outcome.event_id.to_string(),
+                    "automation": true,
                 }),
                 scheduled_at: None,
             })

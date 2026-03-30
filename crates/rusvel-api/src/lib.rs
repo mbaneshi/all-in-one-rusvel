@@ -11,6 +11,7 @@ pub mod analytics;
 pub mod approvals;
 pub mod artifacts;
 pub mod auth;
+pub mod automation;
 pub mod browser;
 pub mod build_cmd;
 pub mod capability;
@@ -35,9 +36,11 @@ pub mod playbooks;
 pub(crate) mod request_id;
 pub mod routes;
 pub mod rules;
+pub mod secrets;
 pub mod skills;
 pub(crate) mod sse_helpers;
 pub mod system;
+pub mod operator_runtime;
 pub mod terminal;
 pub mod visual_report;
 pub mod webhooks;
@@ -68,7 +71,7 @@ use rusvel_channel::ChannelPort;
 use rusvel_core::domain::UserProfile;
 use rusvel_core::id::SessionId;
 use rusvel_core::ports::{
-    DeployPort, EmbeddingPort, EventPort, JobPort, MemoryPort, SessionPort, StoragePort,
+    AuthPort, DeployPort, EmbeddingPort, EventPort, JobPort, MemoryPort, SessionPort, StoragePort,
     TerminalPort, ToolPort, VectorStorePort,
 };
 use rusvel_core::registry::DepartmentRegistry;
@@ -115,6 +118,8 @@ pub struct AppState {
     pub cdp: Option<Arc<rusvel_cdp::CdpClient>>,
     /// Bearer token auth (opt-in via `RUSVEL_API_TOKEN`); see [`auth::AuthConfig`].
     pub auth: auth::AuthConfig,
+    /// Credential / secret registry ([`AuthPort`]); same instance as department boot.
+    pub credentials: Arc<dyn AuthPort>,
     /// Incoming webhooks (HMAC + object-store registrations).
     pub webhook_receiver: Arc<WebhookReceiver>,
     /// Cron schedules; tick enqueues [`rusvel_core::domain::JobKind::ScheduledCron`] jobs.
@@ -124,6 +129,16 @@ pub struct AppState {
     pub channel: Option<Arc<dyn ChannelPort>>,
     pub boot_time: Instant,
     pub failed_departments: Vec<(String, String)>,
+    /// Resolved data directory (`~/.rusvel` by default).
+    pub data_dir: std::path::PathBuf,
+    /// Effective HTTP bind this process uses (e.g. `127.0.0.1:3000`).
+    pub http_listen: String,
+    /// True when Claude is served via `claude -p` at boot (matches `compose_llm_multi` choice).
+    pub claude_transport_cli: bool,
+    /// Snapshot of operator prefs loaded at boot (ObjectStore `system`/`operator_prefs`).
+    pub operator_prefs: operator_runtime::OperatorRuntimePrefs,
+    /// When set, `POST /api/system/shutdown` signals graceful exit (same channel as Ctrl+C).
+    pub shutdown_tx: Option<tokio::sync::watch::Sender<bool>>,
 }
 
 /// Build the Axum router with all routes, CORS, and tracing middleware.
@@ -140,6 +155,7 @@ pub fn build_router_with_frontend(
     frontend_dir: Option<std::path::PathBuf>,
 ) -> Router {
     let shared = Arc::new(state);
+    let _ = automation::register_app_state_for_worker(shared.clone());
 
     let api = Router::new()
         .route("/api/health", get(routes::health))
@@ -429,6 +445,14 @@ pub fn build_router_with_frontend(
         )
         .route("/api/playbooks/{id}", get(playbooks::get_playbook))
         .route("/api/playbooks/{id}/run", post(playbooks::run_playbook))
+        // Secrets registry (AuthPort; values redacted in list/get)
+        .route("/api/secrets", get(secrets::list_secrets))
+        .route(
+            "/api/secrets/{key}",
+            get(secrets::get_secret_meta)
+                .put(secrets::upsert_secret)
+                .delete(secrets::delete_secret),
+        )
         // Starter kits
         .route("/api/kits", get(kits::list_kits))
         .route("/api/kits/{id}", get(kits::get_kit))
@@ -502,6 +526,12 @@ pub fn build_router_with_frontend(
         .route("/api/system/test", post(system::run_tests))
         .route("/api/system/build", post(system::run_build))
         .route("/api/system/status", get(system::get_status))
+        .route("/api/system/runtime", get(operator_runtime::get_runtime))
+        .route(
+            "/api/system/operator-prefs",
+            axum::routing::put(operator_runtime::put_operator_prefs),
+        )
+        .route("/api/system/shutdown", post(operator_runtime::post_shutdown))
         .route("/api/system/notify", post(system::notify))
         .route("/api/system/fix", post(system::self_fix))
         .route("/api/system/ingest-docs", post(system::ingest_docs))
@@ -520,6 +550,10 @@ pub fn build_router_with_frontend(
         )
         // Terminal: dept pane + WebSocket + run-scoped panes (delegation visibility)
         .route(
+            "/api/terminal/session/snapshot",
+            get(terminal::terminal_session_snapshot),
+        )
+        .route(
             "/api/terminal/dept/{dept_id}",
             get(terminal::terminal_dept_pane),
         )
@@ -531,6 +565,14 @@ pub fn build_router_with_frontend(
         .route(
             "/api/terminal/pane/{pane_id}/resize",
             axum::routing::post(terminal::terminal_resize_pane),
+        )
+        .route(
+            "/api/terminal/window/{window_id}/pane",
+            axum::routing::post(terminal::terminal_window_add_pane),
+        )
+        .route(
+            "/api/terminal/window/{window_id}/layout",
+            axum::routing::post(terminal::terminal_window_set_layout),
         )
         // Browser (CDP)
         .route("/api/browser/status", get(browser::browser_status))

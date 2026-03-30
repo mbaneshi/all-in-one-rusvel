@@ -13,6 +13,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 use forge_engine::ForgeEngine;
 use rusvel_core::domain::*;
+use rusvel_core::error::RusvelError;
 use rusvel_core::id::SessionId;
 use rusvel_core::ports::SessionPort;
 
@@ -167,6 +168,33 @@ fn tool_definitions() -> serde_json::Value {
             }
         },
         {
+            "name": "automation_run_flow",
+            "description": "Run a saved flow (DAG) by id. Uses the same dispatcher as cron/webhook automation; requires app state (start API so /api registers worker state, or use streamable HTTP MCP).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "session_id": { "type": "string" },
+                    "flow_id": { "type": "string", "description": "Flow UUID" },
+                    "variables": { "type": "object", "description": "Optional trigger_data object" },
+                    "department_id": { "type": "string" }
+                },
+                "required": ["session_id", "flow_id"]
+            }
+        },
+        {
+            "name": "automation_run_playbook",
+            "description": "Start a playbook run by playbook id (builtin or user-stored).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "session_id": { "type": "string" },
+                    "playbook_id": { "type": "string" },
+                    "variables": { "type": "object" }
+                },
+                "required": ["session_id", "playbook_id"]
+            }
+        },
+        {
             "name": "visual_inspect",
             "description": "Run visual regression tests on the frontend and return results. Captures screenshots of all routes and compares against baselines.",
             "inputSchema": {
@@ -277,6 +305,65 @@ impl RusvelMcp {
                     .map_err(|e| McpError::InvalidParams(e.to_string()))?;
                 let goal = self.engine.set_goal(&sid, title, desc, timeframe).await?;
                 serde_json::to_value(&goal)?
+            }
+            "automation_run_flow" => {
+                let app = rusvel_api::automation::worker_app_state().ok_or_else(|| {
+                    McpError::InvalidParams(
+                        "automation tools need app state: run the HTTP API (or MCP HTTP) so the router registers worker state; stdio-only MCP has no automation dispatch"
+                            .into(),
+                    )
+                })?;
+                let sid = parse_session_id(args)?;
+                let flow_id = args["flow_id"]
+                    .as_str()
+                    .ok_or_else(|| McpError::InvalidParams("flow_id required".into()))?
+                    .to_string();
+                let vars = args
+                    .get("variables")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
+                let department_id = args
+                    .get("department_id")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let trigger = AutomationTriggerPayload {
+                    version: 1,
+                    action: AutomationTriggerAction::RunFlow,
+                    target_id: flow_id,
+                    variables: vars,
+                    department_id,
+                };
+                let out = rusvel_api::automation::dispatch_automation_trigger(app, sid, trigger)
+                    .await
+                    .map_err(|e| McpError::Engine(RusvelError::Validation(e)))?;
+                serde_json::to_value(out).map_err(McpError::Json)?
+            }
+            "automation_run_playbook" => {
+                let app = rusvel_api::automation::worker_app_state().ok_or_else(|| {
+                    McpError::InvalidParams(
+                        "automation tools need app state (HTTP API or MCP HTTP)".into(),
+                    )
+                })?;
+                let sid = parse_session_id(args)?;
+                let playbook_id = args["playbook_id"]
+                    .as_str()
+                    .ok_or_else(|| McpError::InvalidParams("playbook_id required".into()))?
+                    .to_string();
+                let vars = args
+                    .get("variables")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
+                let trigger = AutomationTriggerPayload {
+                    version: 1,
+                    action: AutomationTriggerAction::RunPlaybook,
+                    target_id: playbook_id,
+                    variables: vars,
+                    department_id: None,
+                };
+                let out = rusvel_api::automation::dispatch_automation_trigger(app, sid, trigger)
+                    .await
+                    .map_err(|e| McpError::Engine(RusvelError::Validation(e)))?;
+                serde_json::to_value(out).map_err(McpError::Json)?
             }
             "visual_inspect" => {
                 let update = args["update_baselines"].as_bool().unwrap_or(false);

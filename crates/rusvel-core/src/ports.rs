@@ -372,6 +372,11 @@ pub trait AuthPort: Send + Sync {
 
     /// Delete a credential.
     async fn delete_credential(&self, key: &str) -> Result<()>;
+
+    /// List stored credential keys (no secret material).
+    async fn list_credential_keys(&self) -> Result<Vec<String>> {
+        Ok(vec![])
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -517,6 +522,7 @@ pub trait TerminalPort: Send + Sync {
         cwd: &Path,
         size: PaneSize,
         source: PaneSource,
+        env: Option<std::collections::HashMap<String, String>>,
     ) -> Result<PaneId>;
 
     async fn write_pane(&self, pane_id: &PaneId, data: &[u8]) -> Result<()>;
@@ -532,6 +538,9 @@ pub trait TerminalPort: Send + Sync {
         &self,
         pane_id: &PaneId,
     ) -> Result<tokio::sync::broadcast::Receiver<Vec<u8>>>;
+
+    /// Bounded in-memory scrollback (PTY + `inject_pane_output`) for new WebSocket subscribers.
+    async fn pane_scrollback(&self, pane_id: &PaneId) -> Result<Vec<u8>>;
 
     async fn get_layout(&self, window_id: &WindowId) -> Result<Layout>;
 

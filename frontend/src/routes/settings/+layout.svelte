@@ -11,6 +11,11 @@
 			active: (path: string) => path === '/settings' || path === '/settings/'
 		},
 		{
+			href: '/settings/control',
+			label: 'Control center',
+			active: (path: string) => path.startsWith('/settings/control')
+		},
+		{
 			href: '/settings/llm',
 			label: 'LLM & models',
 			active: (path: string) => path.startsWith('/settings/llm')

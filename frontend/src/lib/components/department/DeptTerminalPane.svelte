@@ -1,7 +1,11 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import DeptTerminal from '$lib/components/DeptTerminal.svelte';
-	import { terminalDeptPaneUrl } from '$lib/clientTerminalApi';
+	import {
+		terminalDeptPaneUrl,
+		terminalWindowAddPaneUrl,
+		terminalWindowLayoutUrl
+	} from '$lib/clientTerminalApi';
 
 	let {
 		dept,
@@ -11,10 +15,12 @@
 		sessionId: string | null;
 	} = $props();
 
-	let terminalPaneId = $state<string | null>(null);
+	let paneIds = $state<string[]>([]);
+	let windowId = $state<string | null>(null);
 	let terminalPaneForKey = $state<string | null>(null);
 	let terminalLoading = $state(false);
 	let terminalErr = $state('');
+	let addingPane = $state(false);
 
 	const OPEN_TIMEOUT_MS = 25_000;
 
@@ -23,7 +29,8 @@
 		const d = dept;
 		if (!sid) {
 			untrack(() => {
-				terminalPaneId = null;
+				paneIds = [];
+				windowId = null;
 				terminalPaneForKey = null;
 				terminalErr = '';
 				terminalLoading = false;
@@ -31,7 +38,7 @@
 			return;
 		}
 		const key = `${sid}:${d}`;
-		if (untrack(() => terminalPaneForKey === key && terminalPaneId !== null)) {
+		if (untrack(() => terminalPaneForKey === key && paneIds.length > 0 && windowId !== null)) {
 			return;
 		}
 
@@ -48,12 +55,13 @@
 				if (!r.ok) return r.text().then((t) => Promise.reject(new Error(t || r.statusText)));
 				return r.json();
 			})
-			.then((j: { pane_id?: string }) => {
-				if (!cancelled && j.pane_id) {
-					terminalPaneId = j.pane_id;
+			.then((j: { pane_id?: string; window_id?: string }) => {
+				if (!cancelled && j.pane_id && j.window_id) {
+					paneIds = [j.pane_id];
+					windowId = j.window_id;
 					terminalPaneForKey = key;
-				} else if (!cancelled && !j.pane_id) {
-					throw new Error('No pane_id in response');
+				} else if (!cancelled && (!j.pane_id || !j.window_id)) {
+					throw new Error('Invalid terminal response (need pane_id and window_id)');
 				}
 			})
 			.catch((e: unknown) => {
@@ -75,6 +83,53 @@
 			ac.abort();
 		};
 	});
+
+	async function addShell(): Promise<void> {
+		const sid = sessionId;
+		const wid = windowId;
+		if (!sid || !wid) return;
+		addingPane = true;
+		terminalErr = '';
+		try {
+			const r = await fetch(terminalWindowAddPaneUrl(wid, sid), {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({})
+			});
+			if (!r.ok) {
+				const t = await r.text();
+				throw new Error(t || r.statusText);
+			}
+			const j = (await r.json()) as { pane_id?: string };
+			if (j.pane_id) paneIds = [...paneIds, j.pane_id];
+		} catch (e: unknown) {
+			terminalErr = e instanceof Error ? e.message : 'Failed to add pane';
+		} finally {
+			addingPane = false;
+		}
+	}
+
+	async function tileVertical(): Promise<void> {
+		const sid = sessionId;
+		const wid = windowId;
+		if (!sid || !wid || paneIds.length < 2) return;
+		const n = paneIds.length;
+		const ratio = 1 / n;
+		const body = { type: 'VSplit', value: Array.from({ length: n }, () => ratio) };
+		try {
+			const r = await fetch(terminalWindowLayoutUrl(wid, sid), {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body)
+			});
+			if (!r.ok && r.status !== 204) {
+				const t = await r.text();
+				throw new Error(t || r.statusText);
+			}
+		} catch (e: unknown) {
+			terminalErr = e instanceof Error ? e.message : 'Failed to set layout';
+		}
+	}
 </script>
 
 <div class="flex h-full min-h-0 min-w-0 flex-1 flex-col p-2">
@@ -84,11 +139,40 @@
 		<p class="text-[11px] text-muted-foreground">Starting terminal…</p>
 	{:else if terminalErr}
 		<p class="text-[11px] text-red-500">{terminalErr}</p>
-	{:else if terminalPaneId}
-		<div class="min-h-0 min-w-0 flex-1">
-			{#key terminalPaneId}
-				<DeptTerminal paneId={terminalPaneId} />
-			{/key}
+	{:else if paneIds.length > 0 && windowId}
+		<div class="flex min-h-0 min-w-0 flex-1 flex-col gap-1">
+			<div class="flex shrink-0 flex-wrap items-center gap-2">
+				<button
+					type="button"
+					disabled={addingPane}
+					class="rounded border border-border bg-secondary/80 px-2 py-1 text-[10px] font-medium text-foreground hover:bg-secondary disabled:opacity-50"
+					onclick={() => addShell()}
+				>
+					{addingPane ? 'Adding…' : '+ Shell'}
+				</button>
+				{#if paneIds.length > 1}
+					<button
+						type="button"
+						class="rounded border border-border bg-secondary/80 px-2 py-1 text-[10px] font-medium text-foreground hover:bg-secondary"
+						onclick={() => tileVertical()}
+					>
+						Tile vertical
+					</button>
+				{/if}
+			</div>
+			<div
+				class="grid min-h-0 min-w-0 flex-1 gap-1 {paneIds.length > 1
+					? 'grid-cols-1 sm:grid-cols-2'
+					: ''}"
+			>
+				{#each paneIds as pid (pid)}
+					<div class="min-h-[200px] min-w-0">
+						{#key pid}
+							<DeptTerminal paneId={pid} />
+						{/key}
+					</div>
+				{/each}
+			</div>
 		</div>
 	{/if}
 </div>

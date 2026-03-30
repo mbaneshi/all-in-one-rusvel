@@ -1,7 +1,7 @@
 //! Compose [`MultiProvider`] from environment (Phase 0 — LLM wiring truth).
 //!
-//! - `RUSVEL_USE_CLAUDE_CLI=1` (or `true`/`yes`/`on`): always [`ClaudeCliProvider`] for [`ModelProvider::Claude`],
-//!   even if `ANTHROPIC_API_KEY` is set (API credits exhausted but Max subscription works).
+//! - Operator prefs (`force_claude_cli`) from ObjectStore at boot override env when set.
+//! - `RUSVEL_USE_CLAUDE_CLI=1` (or `true`/`yes`/`on`): always [`ClaudeCliProvider`] when pref is `None`.
 //! - Else `ANTHROPIC_API_KEY` non-empty: [`ClaudeProvider`] (Messages API).
 //! - Else: [`ClaudeCliProvider`] (subscription / `claude` CLI).
 //! - `OPENAI_API_KEY`: register [`OpenAiProvider`].
@@ -10,17 +10,38 @@
 
 use std::sync::Arc;
 
+use rusvel_api::operator_runtime::OperatorRuntimePrefs;
 use rusvel_core::domain::ModelProvider;
 use rusvel_llm::{
     ClaudeCliProvider, ClaudeProvider, CursorAgentProvider, MultiProvider, OllamaProvider,
     OpenAiProvider, claude_transport_is_cli,
 };
 
-/// Build the default multi-provider stack for the API server / agent runtime.
-pub fn compose_llm_multi() -> MultiProvider {
+fn anthropic_key_present() -> bool {
+    std::env::var("ANTHROPIC_API_KEY")
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false)
+}
+
+/// Resolve whether Claude traffic uses CLI (`claude -p`) for this process.
+pub fn resolve_claude_cli(pref: &OperatorRuntimePrefs) -> bool {
+    match pref.force_claude_cli {
+        Some(true) => true,
+        Some(false) => !anthropic_key_present(),
+        None => claude_transport_is_cli(),
+    }
+}
+
+/// Build the multi-provider stack. Returns `(multi, claude_uses_cli)`.
+pub fn compose_llm_multi(pref: &OperatorRuntimePrefs) -> (MultiProvider, bool) {
+    let mut use_cli = resolve_claude_cli(pref);
+    if !use_cli && !anthropic_key_present() {
+        use_cli = true;
+    }
+
     let mut llm_multi = MultiProvider::new();
 
-    if claude_transport_is_cli() {
+    if use_cli {
         tracing::info!(
             target: "rusvel::llm",
             "registering ClaudeCliProvider for ModelProvider::Claude (claude -p / subscription path)"
@@ -61,5 +82,5 @@ pub fn compose_llm_multi() -> MultiProvider {
         Arc::new(CursorAgentProvider::from_env()),
     );
 
-    llm_multi
+    (llm_multi, use_cli)
 }

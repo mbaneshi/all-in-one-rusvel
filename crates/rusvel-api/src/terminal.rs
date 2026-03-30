@@ -13,14 +13,95 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
-use rusvel_core::id::{PaneId, RunId, SessionId};
-use rusvel_core::terminal::{PaneSize, PaneSource, WindowSource};
+use rusvel_core::id::{PaneId, RunId, SessionId, WindowId};
+use rusvel_core::terminal::{Layout, PaneSize, PaneSource, WindowSource};
 
 use crate::AppState;
 
-fn dept_pane_cache() -> &'static Mutex<HashMap<(SessionId, String), PaneId>> {
-    static CACHE: OnceLock<Mutex<HashMap<(SessionId, String), PaneId>>> = OnceLock::new();
+#[derive(Debug, Deserialize)]
+pub struct TerminalSessionQuery {
+    pub session_id: String,
+}
+
+/// GET /api/terminal/session/snapshot?session_id=… — windows + panes for restore (in-process state).
+pub async fn terminal_session_snapshot(
+    Query(q): Query<TerminalSessionQuery>,
+    State(state): State<std::sync::Arc<AppState>>,
+) -> impl IntoResponse {
+    let terminal = match state.terminal.as_ref() {
+        Some(t) => t.clone(),
+        None => {
+            return (
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({ "error": "Terminal not configured" })),
+            )
+                .into_response();
+        }
+    };
+
+    let session_uuid = match Uuid::parse_str(q.session_id.trim()) {
+        Ok(u) => u,
+        Err(_) => {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": "invalid session_id" })),
+            )
+                .into_response();
+        }
+    };
+    let session_id = SessionId::from_uuid(session_uuid);
+
+    let windows = match terminal.list_windows(&session_id).await {
+        Ok(w) => w,
+        Err(e) => {
+            tracing::error!("list_windows: {e}");
+            return (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "failed to list windows" })),
+            )
+                .into_response();
+        }
+    };
+
+    let panes = match terminal.list_panes_for_session(&session_id).await {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::error!("list_panes_for_session: {e}");
+            return (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "failed to list panes" })),
+            )
+                .into_response();
+        }
+    };
+
+    Json(serde_json::json!({
+        "windows": windows,
+        "panes": panes,
+    }))
+    .into_response()
+}
+
+#[derive(Clone, Copy)]
+struct DeptPaneEntry {
+    window_id: WindowId,
+    pane_id: PaneId,
+}
+
+fn dept_pane_cache() -> &'static Mutex<HashMap<(SessionId, String), DeptPaneEntry>> {
+    static CACHE: OnceLock<Mutex<HashMap<(SessionId, String), DeptPaneEntry>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+async fn session_owns_window(
+    terminal: &std::sync::Arc<dyn rusvel_core::ports::TerminalPort>,
+    session_id: &SessionId,
+    window_id: &WindowId,
+) -> bool {
+    match terminal.list_windows(session_id).await {
+        Ok(ws) => ws.iter().any(|w| w.id == *window_id),
+        Err(_) => false,
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -60,8 +141,12 @@ pub async fn terminal_dept_pane(
     let key = (session_id, dept_id.clone());
     {
         let guard = dept_pane_cache().lock().unwrap();
-        if let Some(pid) = guard.get(&key) {
-            return Json(serde_json::json!({ "pane_id": pid.to_string() })).into_response();
+        if let Some(ent) = guard.get(&key) {
+            return Json(serde_json::json!({
+                "pane_id": ent.pane_id.to_string(),
+                "window_id": ent.window_id.to_string(),
+            }))
+            .into_response();
         }
     }
 
@@ -95,6 +180,7 @@ pub async fn terminal_dept_pane(
             &cwd,
             size,
             PaneSource::Department(dept_id.clone()),
+            None,
         )
         .await
     {
@@ -110,9 +196,218 @@ pub async fn terminal_dept_pane(
     };
 
     let mut guard = dept_pane_cache().lock().unwrap();
-    guard.insert(key, pane_id);
+    guard.insert(
+        key,
+        DeptPaneEntry {
+            window_id,
+            pane_id,
+        },
+    );
 
-    Json(serde_json::json!({ "pane_id": pane_id.to_string() })).into_response()
+    Json(serde_json::json!({
+        "pane_id": pane_id.to_string(),
+        "window_id": window_id.to_string(),
+    }))
+    .into_response()
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TerminalCreatePaneBody {
+    #[serde(default)]
+    pub cmd: Option<String>,
+    #[serde(default)]
+    pub cwd: Option<String>,
+    #[serde(default = "default_term_rows")]
+    pub rows: u16,
+    #[serde(default = "default_term_cols")]
+    pub cols: u16,
+}
+
+fn default_term_rows() -> u16 {
+    24
+}
+
+fn default_term_cols() -> u16 {
+    80
+}
+
+/// POST /api/terminal/window/:window_id/pane?session_id=… — add a PTY pane to an existing window.
+pub async fn terminal_window_add_pane(
+    Path(window_id_str): Path<String>,
+    Query(q): Query<TerminalDeptQuery>,
+    State(state): State<std::sync::Arc<AppState>>,
+    Json(body): Json<TerminalCreatePaneBody>,
+) -> impl IntoResponse {
+    let terminal = match state.terminal.as_ref() {
+        Some(t) => t.clone(),
+        None => {
+            return (
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({ "error": "Terminal not configured" })),
+            )
+                .into_response();
+        }
+    };
+
+    let session_uuid = match Uuid::parse_str(q.session_id.trim()) {
+        Ok(u) => u,
+        Err(_) => {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": "invalid session_id" })),
+            )
+                .into_response();
+        }
+    };
+    let session_id = SessionId::from_uuid(session_uuid);
+
+    let win_uuid = match Uuid::parse_str(window_id_str.trim()) {
+        Ok(u) => u,
+        Err(_) => {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": "invalid window_id" })),
+            )
+                .into_response();
+        }
+    };
+    let window_id = WindowId::from_uuid(win_uuid);
+
+    if !session_owns_window(&terminal, &session_id, &window_id).await {
+        return (
+            axum::http::StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "window not found for session" })),
+        )
+            .into_response();
+    }
+
+    let windows = match terminal.list_windows(&session_id).await {
+        Ok(w) => w,
+        Err(e) => {
+            tracing::error!("list_windows: {e}");
+            return (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "failed to list windows" })),
+            )
+                .into_response();
+        }
+    };
+    let window = match windows.iter().find(|w| w.id == window_id) {
+        Some(w) => w,
+        None => {
+            return (
+                axum::http::StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "error": "window not found" })),
+            )
+                .into_response();
+        }
+    };
+
+    let pane_source = if let Some(ref d) = window.dept_id {
+        PaneSource::Department(d.clone())
+    } else {
+        PaneSource::Shell
+    };
+
+    let shell = body
+        .cmd
+        .clone()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into()));
+    let cwd = body
+        .cwd
+        .as_ref()
+        .map(PathBuf::from)
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")));
+    let size = PaneSize {
+        rows: body.rows.max(1),
+        cols: body.cols.max(1),
+    };
+
+    let pane_id = match terminal
+        .create_pane(&window_id, &shell, &cwd, size, pane_source, None)
+        .await
+    {
+        Ok(id) => id,
+        Err(e) => {
+            tracing::error!("create_pane: {e}");
+            return (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "failed to create pane" })),
+            )
+                .into_response();
+        }
+    };
+
+    Json(serde_json::json!({
+        "pane_id": pane_id.to_string(),
+        "window_id": window_id.to_string(),
+    }))
+    .into_response()
+}
+
+/// POST /api/terminal/window/:window_id/layout?session_id=… — set multiplexer layout for a window.
+pub async fn terminal_window_set_layout(
+    Path(window_id_str): Path<String>,
+    Query(q): Query<TerminalDeptQuery>,
+    State(state): State<std::sync::Arc<AppState>>,
+    Json(layout): Json<Layout>,
+) -> impl IntoResponse {
+    let terminal = match state.terminal.as_ref() {
+        Some(t) => t.clone(),
+        None => {
+            return (
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({ "error": "Terminal not configured" })),
+            )
+                .into_response();
+        }
+    };
+
+    let session_uuid = match Uuid::parse_str(q.session_id.trim()) {
+        Ok(u) => u,
+        Err(_) => {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": "invalid session_id" })),
+            )
+                .into_response();
+        }
+    };
+    let session_id = SessionId::from_uuid(session_uuid);
+
+    let win_uuid = match Uuid::parse_str(window_id_str.trim()) {
+        Ok(u) => u,
+        Err(_) => {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": "invalid window_id" })),
+            )
+                .into_response();
+        }
+    };
+    let window_id = WindowId::from_uuid(win_uuid);
+
+    if !session_owns_window(&terminal, &session_id, &window_id).await {
+        return (
+            axum::http::StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "window not found for session" })),
+        )
+            .into_response();
+    }
+
+    match terminal.set_layout(&window_id, layout).await {
+        Ok(()) => axum::http::StatusCode::NO_CONTENT.into_response(),
+        Err(e) => {
+            tracing::error!("set_layout: {e}");
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "failed to set layout" })),
+            )
+                .into_response()
+        }
+    }
 }
 
 /// GET /api/terminal/runs/:run_id/panes — panes indexed to this agent run (delegation child run, etc.).
@@ -287,7 +582,7 @@ async fn handle_ws(
         let size = PaneSize { rows: 24, cols: 80 };
 
         match terminal
-            .create_pane(&window_id, &shell, &cwd, size, PaneSource::Shell)
+            .create_pane(&window_id, &shell, &cwd, size, PaneSource::Shell, None)
             .await
         {
             Ok(id) => id,
@@ -297,6 +592,11 @@ async fn handle_ws(
             }
         }
     };
+
+    let scrollback = terminal
+        .pane_scrollback(&pane_id)
+        .await
+        .unwrap_or_default();
 
     let mut rx: broadcast::Receiver<Vec<u8>> = match terminal.subscribe_pane(&pane_id).await {
         Ok(r) => r,
@@ -308,11 +608,21 @@ async fn handle_ws(
 
     let (mut ws_tx, mut ws_rx) = socket.split();
 
-    // PTY output -> WebSocket
+    // PTY output -> WebSocket (replay bounded scrollback first so prompt is visible)
     let terminal_write = terminal.clone();
     let pane_for_close = pane_id;
     let pty_to_ws = tokio::spawn(async move {
         use futures::SinkExt;
+        const CHUNK: usize = 16 * 1024;
+        for chunk in scrollback.chunks(CHUNK) {
+            if ws_tx
+                .send(Message::Binary(chunk.to_vec().into()))
+                .await
+                .is_err()
+            {
+                return;
+            }
+        }
         loop {
             match rx.recv().await {
                 Ok(data) => {

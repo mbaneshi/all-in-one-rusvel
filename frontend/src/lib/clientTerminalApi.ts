@@ -18,3 +18,15 @@ export function terminalWebSocketUrl(paneId: string): string {
 	const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 	return `${proto}//${window.location.host}/api/terminal/ws?${p.toString()}`;
 }
+
+export function terminalSessionSnapshotUrl(sessionId: string): string {
+	return `/api/terminal/session/snapshot?session_id=${encodeURIComponent(sessionId)}`;
+}
+
+export function terminalWindowAddPaneUrl(windowId: string, sessionId: string): string {
+	return `/api/terminal/window/${encodeURIComponent(windowId)}/pane?session_id=${encodeURIComponent(sessionId)}`;
+}
+
+export function terminalWindowLayoutUrl(windowId: string, sessionId: string): string {
+	return `/api/terminal/window/${encodeURIComponent(windowId)}/layout?session_id=${encodeURIComponent(sessionId)}`;
+}

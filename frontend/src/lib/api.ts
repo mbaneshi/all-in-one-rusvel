@@ -258,6 +258,58 @@ export interface LlmProvidersReport {
 	claude_effective_transport: 'api' | 'cli';
 	/** True when RUSVEL_USE_CLAUDE_CLI overrode a present API key. */
 	claude_cli_forced_by_env: boolean;
+	/** True when operator_prefs.force_claude_cli was true at boot. */
+	claude_cli_forced_by_operator_pref: boolean;
+}
+
+export interface OperatorCapabilityRow {
+	id: string;
+	label: string;
+	settings_href: string | null;
+	doc_path: string;
+}
+
+export interface SystemRuntimeResponse {
+	process: { uptime_seconds: number; data_dir: string; http_listen: string };
+	auth: { admin_token_configured: boolean; read_token_configured: boolean };
+	llm: LlmProvidersReport;
+	drift: {
+		claude: {
+			env_suggests_cli: boolean;
+			effective_cli: boolean;
+			operator_pref_force_claude_cli: boolean | null;
+		};
+	};
+	integrations: {
+		telegram_channel_configured: boolean;
+		smtp_host_set: boolean;
+		mcp_http_auth_env: boolean;
+	};
+	subsystems: Record<string, boolean>;
+	health: { database: string; departments_failed: unknown[] };
+	operator_prefs_stored: {
+		force_claude_cli: boolean | null;
+		metadata: unknown;
+	};
+	capabilities: OperatorCapabilityRow[];
+	notes: Record<string, string>;
+}
+
+export async function getSystemRuntime(): Promise<SystemRuntimeResponse> {
+	return request('/api/system/runtime');
+}
+
+export async function updateOperatorPrefs(body: {
+	force_claude_cli: boolean | null;
+}): Promise<{ requires_restart: boolean; message: string; saved: unknown }> {
+	return request('/api/system/operator-prefs', {
+		method: 'PUT',
+		body: JSON.stringify(body)
+	});
+}
+
+export async function postShutdown(): Promise<{ ok: boolean; message: string }> {
+	return request('/api/system/shutdown', { method: 'POST', body: '{}' });
 }
 
 export async function getLlmProviders(): Promise<LlmProvidersReport> {

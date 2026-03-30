@@ -15,7 +15,7 @@ use tokio::time::timeout;
 use tracing::info;
 
 use rusvel_core::ports::StoragePort;
-use rusvel_llm::{claude_cli_forced_by_env, claude_transport_is_cli};
+use rusvel_llm::claude_cli_forced_by_env;
 
 use crate::AppState;
 
@@ -310,6 +310,8 @@ pub struct LlmProvidersReport {
     pub claude_effective_transport: String,
     /// True when `RUSVEL_USE_CLAUDE_CLI` forced CLI despite a present API key.
     pub claude_cli_forced_by_env: bool,
+    /// True when `operator_prefs.force_claude_cli == Some(true)` at boot.
+    pub claude_cli_forced_by_operator_pref: bool,
 }
 
 async fn probe_cli(cmd: &str, args: &[&str]) -> Option<bool> {
@@ -326,8 +328,23 @@ async fn probe_cli(cmd: &str, args: &[&str]) -> Option<bool> {
     Some(status.success())
 }
 
-/// `GET /api/config/llm-providers` — wiring + light reachability (Ollama HTTP, CLI `--version`).
-pub async fn llm_providers_status() -> Json<LlmProvidersReport> {
+/// Build LLM provider report using **this process’s** effective Claude transport (from boot).
+pub async fn build_llm_providers_report_for_state(state: &AppState) -> LlmProvidersReport {
+    let forced_pref = state.operator_prefs.force_claude_cli == Some(true);
+    build_llm_providers_report(
+        state.claude_transport_cli,
+        claude_cli_forced_by_env(),
+        forced_pref,
+    )
+    .await
+}
+
+/// Wiring + light reachability probes. `effective_claude_cli` must match how `rusvel-app` registered Claude at boot.
+pub async fn build_llm_providers_report(
+    effective_claude_cli: bool,
+    claude_forced_env: bool,
+    claude_forced_operator_pref: bool,
+) -> LlmProvidersReport {
     let ollama_host =
         std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".into());
     let ollama_base = ollama_host.trim_end_matches('/').to_string();
@@ -368,9 +385,6 @@ pub async fn llm_providers_status() -> Json<LlmProvidersReport> {
     let anthropic_raw = std::env::var("ANTHROPIC_API_KEY").unwrap_or_default();
     let anthropic_key = !anthropic_raw.trim().is_empty();
 
-    let effective_claude_cli = claude_transport_is_cli();
-    let claude_forced_cli = claude_cli_forced_by_env();
-
     let mut claude_cli_ok = probe_cli("claude", &["--version"]).await;
     if claude_cli_ok != Some(true) {
         claude_cli_ok = probe_cli("claude", &["-h"]).await;
@@ -378,14 +392,18 @@ pub async fn llm_providers_status() -> Json<LlmProvidersReport> {
     let claude_cli_detail = match claude_cli_ok {
         Some(true) => Some(
             if effective_claude_cli {
-                if claude_forced_cli {
+                if claude_forced_operator_pref {
+                    "This process routes `claude/…` through `claude -p` because operator_prefs.force_claude_cli=true was saved and applied at boot."
+                        .into()
+                } else if claude_forced_env {
                     "This process routes `claude/…` through `claude -p` because RUSVEL_USE_CLAUDE_CLI is set (even if ANTHROPIC_API_KEY exists)."
+                        .into()
                 } else {
-                    "This process routes `claude/…` through `claude -p` (no usable API key at boot). Subscription / Claude Code Max."
+                    "This process routes `claude/…` through `claude -p` (no Anthropic API path at boot). Subscription / Claude Code Max."
+                        .into()
                 }
-                .into()
             } else {
-                "`claude` works on PATH, but this server still uses the Anthropic Messages API for `claude/…` (non-empty ANTHROPIC_API_KEY). Low-credit errors come from the API — set RUSVEL_USE_CLAUDE_CLI=1 and restart Rusvel, or unset the key."
+                "`claude` works on PATH, but this server uses the Anthropic Messages API for `claude/…` (API key present and CLI not forced). Low-credit errors come from the API — set operator pref, RUSVEL_USE_CLAUDE_CLI=1, or unset the key, then restart."
                     .into()
             },
         ),
@@ -429,7 +447,7 @@ pub async fn llm_providers_status() -> Json<LlmProvidersReport> {
             },
             healthy: None,
             detail: Some(
-                "Saving `claude/…` in the UI only sets the model id — it does not switch API vs CLI. Backend is fixed at server boot: non-empty key → Messages API unless RUSVEL_USE_CLAUDE_CLI=1. Billing errors mean the API rejected the key/account."
+                "Saving `claude/…` in the UI only sets the model id — it does not switch API vs CLI. Backend is fixed at server boot: operator prefs, then env. Billing errors mean the API rejected the key/account."
                     .into(),
             ),
         },
@@ -478,7 +496,7 @@ pub async fn llm_providers_status() -> Json<LlmProvidersReport> {
         },
     ];
 
-    Json(LlmProvidersReport {
+    LlmProvidersReport {
         providers,
         ollama_host: ollama_base,
         ollama_models,
@@ -487,8 +505,14 @@ pub async fn llm_providers_status() -> Json<LlmProvidersReport> {
         } else {
             "api".into()
         },
-        claude_cli_forced_by_env: claude_forced_cli,
-    })
+        claude_cli_forced_by_env: claude_forced_env,
+        claude_cli_forced_by_operator_pref: claude_forced_operator_pref,
+    }
+}
+
+/// `GET /api/config/llm-providers` — wiring + light reachability (Ollama HTTP, CLI `--version`).
+pub async fn llm_providers_status(State(state): State<Arc<AppState>>) -> Json<LlmProvidersReport> {
+    Json(build_llm_providers_report_for_state(&state).await)
 }
 
 #[cfg(test)]

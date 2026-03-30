@@ -46,6 +46,7 @@ pub async fn ensure_browser_log_pane(
                 tab_id: tab_id.to_string(),
                 platform: platform.to_string(),
             },
+            None,
         )
         .await?;
     Ok(pane_id)
@@ -72,7 +73,7 @@ pub async fn spawn_browser_log_bridge(
     session_id: SessionId,
     tab_id: String,
     platform: String,
-) -> Result<()> {
+) -> Result<PaneId> {
     let mut rx = browser.observe(&tab_id).await?;
     let pane_id =
         ensure_browser_log_pane(terminal.as_ref(), &session_id, &tab_id, &platform).await?;
@@ -92,5 +93,5 @@ pub async fn spawn_browser_log_bridge(
             }
         }
     });
-    Ok(())
+    Ok(pane_id)
 }

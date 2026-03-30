@@ -186,6 +186,12 @@
 					<code class="rounded bg-muted px-1">RUSVEL_USE_CLAUDE_CLI</code> is forcing CLI despite an API key.
 				</p>
 			{/if}
+			{#if llmReport.claude_cli_forced_by_operator_pref}
+				<p class="mt-2 text-xs text-sky-700 dark:text-sky-300">
+					Operator preference (saved in object store) forced CLI at server boot — change under
+					<a href="/settings/control" class="font-medium underline">Control center</a> and restart.
+				</p>
+			{/if}
 		</div>
 	{/if}
 

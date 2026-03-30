@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 
 use async_trait::async_trait;
 use chrono::Utc;
@@ -17,6 +18,20 @@ use tokio::sync::{RwLock, broadcast};
 
 const OUT_CHANNEL_CAP: usize = 256;
 const OBJ_KIND_SESSION: &str = "terminal.session";
+/// Max bytes retained per pane for WebSocket replay (ring buffer).
+const PANE_SCROLLBACK_CAP: usize = 256 * 1024;
+
+fn append_pane_scrollback(buf: &Arc<StdMutex<Vec<u8>>>, data: &[u8]) {
+    if data.is_empty() {
+        return;
+    }
+    let mut v = buf.lock().unwrap();
+    v.extend_from_slice(data);
+    if v.len() > PANE_SCROLLBACK_CAP {
+        let overflow = v.len() - PANE_SCROLLBACK_CAP;
+        v.drain(..overflow);
+    }
+}
 
 fn pty_size(size: PaneSize) -> PtySize {
     PtySize {
@@ -51,6 +66,8 @@ struct PaneRuntime {
     writer: Arc<tokio::sync::Mutex<Box<dyn Write + Send>>>,
     out: broadcast::Sender<Vec<u8>>,
     child: Arc<tokio::sync::Mutex<Box<dyn Child + Send + Sync>>>,
+    /// Ring buffer of recent output (PTY + inject) for WS attach replay.
+    scrollback: Arc<StdMutex<Vec<u8>>>,
 }
 
 impl TerminalManager {
@@ -204,11 +221,15 @@ impl TerminalPort for TerminalManager {
         source: WindowSource,
     ) -> Result<WindowId> {
         let id = WindowId::new();
+        let dept_id = match &source {
+            WindowSource::Department(d) => Some(d.clone()),
+            _ => None,
+        };
         let window = Window {
             id,
             session_id: *session_id,
             name: name.to_string(),
-            dept_id: None,
+            dept_id,
             source,
             panes: vec![],
             layout: Layout::Single,
@@ -302,6 +323,7 @@ impl TerminalPort for TerminalManager {
         cwd: &Path,
         size: PaneSize,
         source: PaneSource,
+        env: Option<std::collections::HashMap<String, String>>,
     ) -> Result<PaneId> {
         let (session_id, title) = {
             let windows = self.inner.windows.read().await;
@@ -331,6 +353,12 @@ impl TerminalPort for TerminalManager {
         if !cwd.as_os_str().is_empty() {
             cmd_builder.cwd(cwd);
         }
+        let env_stored: HashMap<String, String> = env.clone().unwrap_or_default();
+        if let Some(vars) = env {
+            for (k, v) in vars {
+                cmd_builder.env(k, v);
+            }
+        }
 
         let child = pair.slave.spawn_command(cmd_builder).map_err(map_pty_err)?;
 
@@ -347,6 +375,8 @@ impl TerminalPort for TerminalManager {
 
         let (out_tx, _out_rx) = broadcast::channel::<Vec<u8>>(OUT_CHANNEL_CAP);
         let out_tx_task = out_tx.clone();
+        let scrollback = Arc::new(StdMutex::new(Vec::new()));
+        let scrollback_reader = Arc::clone(&scrollback);
 
         let pane = Pane {
             id: pane_id,
@@ -354,7 +384,7 @@ impl TerminalPort for TerminalManager {
             title,
             command: cmd.to_string(),
             cwd: cwd.to_path_buf(),
-            env: HashMap::new(),
+            env: env_stored,
             size,
             status: PaneStatus::Running,
             source,
@@ -382,6 +412,7 @@ impl TerminalPort for TerminalManager {
             writer: writer.clone(),
             out: out_tx,
             child: child.clone(),
+            scrollback,
         };
         {
             let mut active = self.inner.active.write().await;
@@ -396,7 +427,9 @@ impl TerminalPort for TerminalManager {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        let _ = out_tx_task.send(buf[..n].to_vec());
+                        let chunk = buf[..n].to_vec();
+                        append_pane_scrollback(&scrollback_reader, &chunk);
+                        let _ = out_tx_task.send(chunk);
                     }
                     Err(_) => break,
                 }
@@ -443,6 +476,7 @@ impl TerminalPort for TerminalManager {
             kind: "Pane".into(),
             id: pane_id.to_string(),
         })?;
+        append_pane_scrollback(&rt.scrollback, data);
         let _ = rt.out.send(data.to_vec());
         Ok(())
     }
@@ -517,6 +551,16 @@ impl TerminalPort for TerminalManager {
             id: pane_id.to_string(),
         })?;
         Ok(rt.out.subscribe())
+    }
+
+    async fn pane_scrollback(&self, pane_id: &PaneId) -> Result<Vec<u8>> {
+        let active = self.inner.active.read().await;
+        let rt = active.get(pane_id).ok_or_else(|| RusvelError::NotFound {
+            kind: "Pane".into(),
+            id: pane_id.to_string(),
+        })?;
+        let v = rt.scrollback.lock().unwrap().clone();
+        Ok(v)
     }
 
     async fn get_layout(&self, window_id: &WindowId) -> Result<Layout> {

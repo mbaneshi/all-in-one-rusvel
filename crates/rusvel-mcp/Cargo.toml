@@ -9,6 +9,7 @@ description = "MCP (Model Context Protocol) server surface for RUSVEL"
 
 [dependencies]
 rusvel-core = { workspace = true }
+rusvel-api = { path = "../rusvel-api" }
 forge-engine = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

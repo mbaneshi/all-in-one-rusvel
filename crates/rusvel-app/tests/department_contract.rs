@@ -289,6 +289,9 @@ impl AuthPort for StubAuth {
     async fn delete_credential(&self, _: &str) -> Result<()> {
         Ok(())
     }
+    async fn list_credential_keys(&self) -> Result<Vec<String>> {
+        Ok(vec![])
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════

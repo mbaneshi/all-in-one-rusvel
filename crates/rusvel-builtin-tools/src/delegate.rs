@@ -200,6 +200,7 @@ pub async fn register(
                                     delegated_run_id: child_run_id,
                                     persona: persona_label.clone(),
                                 },
+                                None,
                             )
                             .await
                             .map_err(|e| {

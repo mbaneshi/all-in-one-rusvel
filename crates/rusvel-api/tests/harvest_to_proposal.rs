@@ -20,9 +20,10 @@ use rusvel_core::domain::{
 use rusvel_core::error::Result;
 use rusvel_core::id::{RunId, SessionId};
 use rusvel_core::ports::{
-    AgentPort, ConfigPort, EventPort, JobPort, LlmPort, MemoryPort, SessionPort, StoragePort,
-    ToolPort,
+    AgentPort, AuthPort, ConfigPort, EventPort, JobPort, LlmPort, MemoryPort, SessionPort,
+    StoragePort, ToolPort,
 };
+use rusvel_auth::InMemoryAuthAdapter;
 use rusvel_core::registry::DepartmentRegistry;
 use rusvel_db::Database;
 use rusvel_event::EventBus;
@@ -295,6 +296,8 @@ async fn test_router() -> (
     let rusvel_base: Arc<dyn rusvel_core::ports::RusvelBasePort> =
         Arc::new(rusvel_db::RusvelBaseAdapter(db.clone()));
 
+    let credentials: Arc<dyn AuthPort> = Arc::new(InMemoryAuthAdapter::new());
+
     let state = AppState {
         forge,
         code_engine: None,
@@ -321,12 +324,18 @@ async fn test_router() -> (
         terminal: None,
         cdp: None,
         auth: rusvel_api::auth::AuthConfig::from_env(),
+        credentials,
         webhook_receiver,
         cron_scheduler,
         context_pack_cache: Arc::new(rusvel_api::ContextPackCache::default()),
         channel: None,
         boot_time: std::time::Instant::now(),
         failed_departments: Vec::new(),
+        data_dir: std::env::temp_dir().join("rusvel-harvest-test"),
+        http_listen: "127.0.0.1:3000".into(),
+        claude_transport_cli: rusvel_llm::claude_transport_is_cli(),
+        operator_prefs: rusvel_api::operator_runtime::OperatorRuntimePrefs::default(),
+        shutdown_tx: None,
     };
 
     (

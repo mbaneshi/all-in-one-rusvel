@@ -199,6 +199,8 @@ pub fn code_manifest() -> DepartmentManifest {
             add_dirs: Some(vec![".".into()]),
             ..Default::default()
         },
+
+        terminal: DepartmentTerminalPrefs::default(),
     }
 }
 

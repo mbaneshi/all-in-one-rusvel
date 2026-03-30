@@ -151,6 +151,34 @@
 		<a href="/settings/spend" class="font-medium text-primary hover:underline">Spend</a>.
 	</div>
 
+	<div class="rounded-xl border border-border bg-card p-5">
+		<h2 class="mb-1 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+			Operator capabilities
+		</h2>
+		<p class="mb-4 text-xs text-muted-foreground leading-relaxed">
+			Machine-readable registry is included in <code class="rounded bg-muted px-1 font-mono text-[10px]">GET /api/system/runtime</code>
+			(<code class="rounded bg-muted px-1 font-mono text-[10px]">capabilities</code>). Doc paths are repo-relative.
+		</p>
+		<ul class="grid gap-2 sm:grid-cols-2">
+			<li class="rounded-md border border-border bg-muted/10 px-3 py-2">
+				<a href="/settings/control" class="text-sm font-medium text-primary hover:underline">Control center</a>
+				<p class="mt-0.5 font-mono text-[10px] text-muted-foreground">docs/operators/security-hardening.md</p>
+			</li>
+			<li class="rounded-md border border-border bg-muted/10 px-3 py-2">
+				<a href="/settings/llm" class="text-sm font-medium text-primary hover:underline">LLM &amp; models</a>
+				<p class="mt-0.5 font-mono text-[10px] text-muted-foreground">docs/operators/security-hardening.md</p>
+			</li>
+			<li class="rounded-md border border-border bg-muted/10 px-3 py-2">
+				<a href="/settings/spend" class="text-sm font-medium text-primary hover:underline">Spend</a>
+				<p class="mt-0.5 font-mono text-[10px] text-muted-foreground">docs/status/current-state.md</p>
+			</li>
+			<li class="rounded-md border border-border bg-muted/10 px-3 py-2">
+				<span class="text-sm font-medium text-foreground">Security &amp; env reference</span>
+				<p class="mt-0.5 font-mono text-[10px] text-muted-foreground">docs/operators/security-hardening.md</p>
+			</li>
+		</ul>
+	</div>
+
 	<!-- Departments directory -->
 	<div class="rounded-xl border border-border bg-card p-5">
 		<h2 class="mb-1 text-sm font-semibold uppercase tracking-wider text-muted-foreground">

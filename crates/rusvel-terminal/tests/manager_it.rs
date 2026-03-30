@@ -61,6 +61,7 @@ async fn pane_exits_with_status_queryable_via_port() {
             Path::new("/"),
             PaneSize { rows: 24, cols: 80 },
             PaneSource::AgentTool { run_id: run },
+            None,
         )
         .await
         .expect("pane");
@@ -73,4 +74,36 @@ async fn pane_exits_with_status_queryable_via_port() {
         .find(|p| p.run_id == Some(run))
         .expect("pane with run_id");
     assert!(matches!(p.status, PaneStatus::Exited(0)));
+}
+
+#[tokio::test]
+async fn inject_and_pane_scrollback_roundtrip() {
+    let db = test_db();
+    let events: Arc<dyn EventPort> = Arc::new(EventBus::new(db.clone()));
+    let tm = TerminalManager::new(events, db.clone());
+
+    let sid = SessionId::new();
+    let wid = tm
+        .create_window(&sid, "W", WindowSource::Manual)
+        .await
+        .unwrap();
+    let pid = tm
+        .create_pane(
+            &wid,
+            "sleep 3",
+            Path::new("/"),
+            PaneSize { rows: 24, cols: 80 },
+            PaneSource::Shell,
+            None,
+        )
+        .await
+        .expect("pane");
+
+    let line = b"hello-scrollback\r\n";
+    tm.inject_pane_output(&pid, line).await.expect("inject");
+    let back = tm.pane_scrollback(&pid).await.expect("scrollback");
+    assert!(
+        back.windows(line.len()).any(|w| w == line),
+        "scrollback should contain injected line"
+    );
 }

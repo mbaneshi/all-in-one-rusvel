@@ -21,9 +21,11 @@ harvest-engine = { workspace = true }
 flow-engine = { workspace = true }
 gtm-engine = { workspace = true }
 rusvel-cdp = { workspace = true }
+rusvel-terminal = { path = "../rusvel-terminal" }
 rusvel-webhook = { workspace = true }
 rusvel-cron = { workspace = true }
 rusvel-channel = { workspace = true }
+rusvel-auth = { path = "../rusvel-auth" }
 axum = { workspace = true }
 tower = { workspace = true, features = ["limit", "buffer"] }
 tower-http = { workspace = true }

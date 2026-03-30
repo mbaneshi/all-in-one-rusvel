@@ -82,6 +82,7 @@ pub async fn register(registry: &ToolRegistry, terminal: Option<Arc<dyn Terminal
                                     cols: 80,
                                 },
                                 PaneSource::Shell,
+                                None,
                             )
                             .await
                             .map_err(|e| {

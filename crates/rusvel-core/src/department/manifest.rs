@@ -3,9 +3,25 @@
 //!
 //! Analogous to `VSCode`'s `package.json#contributes` or Django's `AppConfig`.
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::config::LayeredConfig;
+
+/// Host-applied defaults when spawning a department terminal pane (PTY).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DepartmentTerminalPrefs {
+    /// Initial working directory for new panes (host may override with env).
+    #[serde(default)]
+    pub default_cwd: Option<String>,
+    /// Lines sent to the shell after spawn (via `write_pane`, newline-terminated).
+    #[serde(default)]
+    pub init_commands: Vec<String>,
+    /// Extra environment variables merged into the PTY `sh -c` process.
+    #[serde(default)]
+    pub env: HashMap<String, String>,
+}
 
 // ════════════════════════════════════════════════════════════════════
 //  DepartmentManifest — the stability surface
@@ -88,6 +104,10 @@ pub struct DepartmentManifest {
 
     /// Default layered config (model, effort, permissions, etc.).
     pub default_config: LayeredConfig,
+
+    /// Optional PTY defaults for this department (also mirrored on registry `DepartmentDef`).
+    #[serde(default)]
+    pub terminal: DepartmentTerminalPrefs,
 }
 
 impl DepartmentManifest {
@@ -116,6 +136,7 @@ impl DepartmentManifest {
             depends_on: Vec::new(),
             config_schema: serde_json::json!({}),
             default_config: LayeredConfig::default(),
+            terminal: DepartmentTerminalPrefs::default(),
         }
     }
 }

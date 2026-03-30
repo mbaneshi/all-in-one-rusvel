@@ -11,37 +11,39 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::AppState;
+use crate::skills;
 use rusvel_core::domain::{
-    Content, Part, Playbook, PlaybookAction, PlaybookRun, PlaybookRunStatus,
+    AgentProfile, Content, Part, Playbook, PlaybookAction, PlaybookRun, PlaybookRunStatus,
 };
+use rusvel_core::domain::ObjectFilter;
 use rusvel_core::id::FlowId;
 
 type ApiResult<T> = Result<Json<T>, (StatusCode, String)>;
+
+const PLAYBOOK_OBJECT_KIND: &str = "playbooks";
 
 fn err(status: StatusCode, msg: impl Into<String>) -> (StatusCode, String) {
     (status, msg.into())
 }
 
-// ── Store (module-local; playbooks are lightweight and not yet persisted) ──
+// ── Store (runs in-memory; definitions persisted in ObjectStore) ─────────────
 
-struct PlaybookStore {
-    user: std::sync::RwLock<HashMap<String, Playbook>>,
+struct PlaybookRunStore {
     runs: std::sync::RwLock<HashMap<String, PlaybookRun>>,
 }
 
-impl PlaybookStore {
+impl PlaybookRunStore {
     fn new() -> Self {
         Self {
-            user: std::sync::RwLock::new(HashMap::new()),
             runs: std::sync::RwLock::new(HashMap::new()),
         }
     }
 }
 
-fn store() -> &'static PlaybookStore {
+fn run_store() -> &'static PlaybookRunStore {
     use std::sync::OnceLock;
-    static S: OnceLock<PlaybookStore> = OnceLock::new();
-    S.get_or_init(PlaybookStore::new)
+    static S: OnceLock<PlaybookRunStore> = OnceLock::new();
+    S.get_or_init(PlaybookRunStore::new)
 }
 
 fn builtin_playbooks() -> Vec<Playbook> {
@@ -193,18 +195,36 @@ fn builtin_playbooks() -> Vec<Playbook> {
     ]
 }
 
-fn all_playbooks() -> Vec<Playbook> {
-    let mut out: Vec<Playbook> = builtin_playbooks();
-    let user = store().user.read().expect("playbook store poisoned");
-    out.extend(user.values().cloned());
-    out
+async fn list_stored_playbooks(state: &AppState) -> Result<Vec<Playbook>, String> {
+    let rows = state
+        .storage
+        .objects()
+        .list(PLAYBOOK_OBJECT_KIND, ObjectFilter::default())
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|v| serde_json::from_value::<Playbook>(v).ok())
+        .collect())
 }
 
-fn resolve_playbook(id: &str) -> Option<Playbook> {
+async fn all_playbooks(state: &AppState) -> Result<Vec<Playbook>, String> {
+    let mut out = builtin_playbooks();
+    out.extend(list_stored_playbooks(state).await?);
+    Ok(out)
+}
+
+async fn resolve_playbook(state: &AppState, id: &str) -> Option<Playbook> {
     if let Some(p) = builtin_playbooks().into_iter().find(|b| b.id == id) {
         return Some(p);
     }
-    store().user.read().ok()?.get(id).cloned()
+    let val = state
+        .storage
+        .objects()
+        .get(PLAYBOOK_OBJECT_KIND, id)
+        .await
+        .ok()??;
+    serde_json::from_value(val).ok()
 }
 
 fn content_to_string(content: &Content) -> String {
@@ -237,8 +257,29 @@ fn interpolate(template: &str, ctx: &serde_json::Value) -> String {
     s
 }
 
+fn playbook_department(playbook: &Playbook) -> &str {
+    playbook
+        .metadata
+        .get("department")
+        .and_then(|v| v.as_str())
+        .unwrap_or("forge")
+}
+
+async fn load_agent_by_name(state: &AppState, name: &str) -> Option<AgentProfile> {
+    let all = state
+        .storage
+        .objects()
+        .list("agents", ObjectFilter::default())
+        .await
+        .ok()?;
+    all.into_iter()
+        .filter_map(|v| serde_json::from_value::<AgentProfile>(v).ok())
+        .find(|a| a.name.eq_ignore_ascii_case(name))
+}
+
 async fn run_step(
     state: &Arc<AppState>,
+    playbook: &Playbook,
     step: &rusvel_core::domain::PlaybookStep,
     ctx: &mut serde_json::Value,
 ) -> Result<serde_json::Value, String> {
@@ -248,7 +289,12 @@ async fn run_step(
             prompt_template,
             tools,
         } => {
-            let prompt = interpolate(prompt_template, ctx);
+            let mut prompt = interpolate(prompt_template, ctx);
+            if let Some(re) = ctx.get("rules_excerpt").and_then(|v| v.as_str()) {
+                if !re.is_empty() {
+                    prompt = format!("--- Rules context ---\n{re}\n---\n{prompt}");
+                }
+            }
             let mut args = json!({
                 "prompt": prompt,
                 "tools": tools,
@@ -308,20 +354,136 @@ async fn run_step(
             "message": message,
             "status": "awaiting_approval",
         })),
+        PlaybookAction::Skill {
+            skill_name,
+            input,
+            department,
+        } => {
+            let dept = if department.is_empty() {
+                playbook_department(playbook)
+            } else {
+                department.as_str()
+            };
+            let mut prompt = skills::resolve_skill_by_name_for_playbook(
+                state,
+                dept,
+                skill_name.as_str(),
+                input.as_str(),
+            )
+            .await?;
+            prompt = interpolate(&prompt, ctx);
+            if let Some(re) = ctx.get("rules_excerpt").and_then(|v| v.as_str()) {
+                if !re.is_empty() {
+                    prompt = format!("--- Rules context ---\n{re}\n---\n{prompt}");
+                }
+            }
+            let mut args = json!({
+                "prompt": prompt,
+                "tools": Vec::<String>::new() as Vec<String>,
+            });
+            let tr = state
+                .tools
+                .call("delegate_agent", args)
+                .await
+                .map_err(|e| e.to_string())?;
+            let text = content_to_string(&tr.output);
+            ctx["last_output"] = json!(text);
+            Ok(json!({
+                "step": step.name,
+                "kind": "skill",
+                "success": tr.success,
+                "output": text,
+            }))
+        }
+        PlaybookAction::AgentProfile {
+            agent_name,
+            prompt_template,
+            tools,
+        } => {
+            let agent = load_agent_by_name(state, agent_name.as_str())
+                .await
+                .ok_or_else(|| format!("agent '{agent_name}' not found"))?;
+            let mut body = interpolate(prompt_template, ctx);
+            if let Some(re) = ctx.get("rules_excerpt").and_then(|v| v.as_str()) {
+                if !re.is_empty() {
+                    body = format!("--- Rules context ---\n{re}\n---\n{body}");
+                }
+            }
+            let full_prompt = if agent.instructions.is_empty() {
+                body
+            } else {
+                format!("<system>\n{}\n</system>\n\n{}", agent.instructions, body)
+            };
+            let tool_list = if tools.is_empty() {
+                agent.allowed_tools.clone()
+            } else {
+                tools.clone()
+            };
+            let mut args = json!({
+                "prompt": full_prompt,
+                "tools": tool_list,
+            });
+            if let Some(p) = agent.metadata.get("persona").and_then(|v| v.as_str()) {
+                args["persona"] = json!(p);
+            }
+            let tr = state
+                .tools
+                .call("delegate_agent", args)
+                .await
+                .map_err(|e| e.to_string())?;
+            let text = content_to_string(&tr.output);
+            ctx["last_output"] = json!(text);
+            Ok(json!({
+                "step": step.name,
+                "kind": "agent_profile",
+                "success": tr.success,
+                "output": text,
+            }))
+        }
+        PlaybookAction::RulesAppend {
+            department,
+            rule_names,
+        } => {
+            let mut rules = crate::rules::load_rules_for_engine(state, department.as_str()).await;
+            if !rule_names.is_empty() {
+                rules.retain(|r| {
+                    rule_names
+                        .iter()
+                        .any(|n| r.name.eq_ignore_ascii_case(n.as_str()))
+                });
+            }
+            let text: String = rules
+                .iter()
+                .map(|r| format!("[{}]: {}\n", r.name, r.content))
+                .collect();
+            ctx["rules_excerpt"] = json!(text);
+            Ok(json!({
+                "step": step.name,
+                "kind": "rules_append",
+                "rule_count": rules.len(),
+            }))
+        }
     }
 }
 
 // ── Handlers ──────────────────────────────────────────────────────
 
 /// `GET /api/playbooks` — list built-in and user playbooks.
-pub async fn list_playbooks() -> ApiResult<Vec<Playbook>> {
-    Ok(Json(all_playbooks()))
+pub async fn list_playbooks(State(state): State<Arc<AppState>>) -> ApiResult<Vec<Playbook>> {
+    let list = all_playbooks(state.as_ref())
+        .await
+        .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    Ok(Json(list))
 }
 
 /// `GET /api/playbooks/:id` — get one playbook.
-pub async fn get_playbook(Path(id): Path<String>) -> ApiResult<Playbook> {
-    let p =
-        resolve_playbook(&id).ok_or_else(|| err(StatusCode::NOT_FOUND, "playbook not found"))?;
+pub async fn get_playbook(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> ApiResult<Playbook> {
+    let p = resolve_playbook(state.as_ref(), &id)
+        .await
+        .ok_or_else(|| err(StatusCode::NOT_FOUND, "playbook not found"))?;
     Ok(Json(p))
 }
 
@@ -335,8 +497,11 @@ pub struct CreatePlaybookBody {
     pub metadata: serde_json::Value,
 }
 
-/// `POST /api/playbooks` — create a user playbook.
-pub async fn create_playbook(Json(body): Json<CreatePlaybookBody>) -> ApiResult<serde_json::Value> {
+/// `POST /api/playbooks` — create a user playbook (persisted in ObjectStore).
+pub async fn create_playbook(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<CreatePlaybookBody>,
+) -> ApiResult<serde_json::Value> {
     let id = uuid::Uuid::now_v7().to_string();
     if builtin_playbooks().iter().any(|b| b.id == id) {
         return Err(err(StatusCode::CONFLICT, "id collision"));
@@ -353,11 +518,13 @@ pub async fn create_playbook(Json(body): Json<CreatePlaybookBody>) -> ApiResult<
             body.metadata
         },
     };
-    store()
-        .user
-        .write()
-        .map_err(|_| err(StatusCode::INTERNAL_SERVER_ERROR, "lock poisoned"))?
-        .insert(id.clone(), pb);
+    let val = serde_json::to_value(&pb).map_err(|e| err(StatusCode::BAD_REQUEST, e.to_string()))?;
+    state
+        .storage
+        .objects()
+        .put(PLAYBOOK_OBJECT_KIND, &id, val)
+        .await
+        .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(json!({ "id": id })))
 }
 
@@ -367,14 +534,15 @@ pub struct RunPlaybookBody {
     pub variables: serde_json::Value,
 }
 
-/// `POST /api/playbooks/:id/run` — start a run (async).
-pub async fn run_playbook(
-    State(state): State<Arc<AppState>>,
-    Path(id): Path<String>,
-    Json(body): Json<RunPlaybookBody>,
-) -> ApiResult<serde_json::Value> {
-    let playbook =
-        resolve_playbook(&id).ok_or_else(|| err(StatusCode::NOT_FOUND, "playbook not found"))?;
+/// Start a playbook run (cron, webhook, MCP). Returns `run_id`.
+pub async fn start_playbook_run(
+    state: Arc<AppState>,
+    playbook_id: &str,
+    variables: serde_json::Value,
+) -> Result<String, String> {
+    let playbook = resolve_playbook(state.as_ref(), playbook_id)
+        .await
+        .ok_or_else(|| format!("playbook not found: {playbook_id}"))?;
     let run_id = uuid::Uuid::now_v7().to_string();
     let run = PlaybookRun {
         id: run_id.clone(),
@@ -386,18 +554,29 @@ pub async fn run_playbook(
         error: None,
         metadata: serde_json::Value::default(),
     };
-    store()
+    run_store()
         .runs
         .write()
-        .map_err(|_| err(StatusCode::INTERNAL_SERVER_ERROR, "lock poisoned"))?
+        .map_err(|_| "playbook run store poisoned".to_string())?
         .insert(run_id.clone(), run.clone());
 
-    let mut initial = body.variables;
+    let mut initial = variables;
     if !initial.is_object() {
         initial = json!({});
     }
     spawn_run_with_context(state, run, playbook, initial);
+    Ok(run_id)
+}
 
+/// `POST /api/playbooks/:id/run` — start a run (async).
+pub async fn run_playbook(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(body): Json<RunPlaybookBody>,
+) -> ApiResult<serde_json::Value> {
+    let run_id = start_playbook_run(state.clone(), &id, body.variables)
+        .await
+        .map_err(|e| err(StatusCode::BAD_REQUEST, e))?;
     Ok(Json(json!({ "run_id": run_id })))
 }
 
@@ -413,14 +592,14 @@ fn spawn_run_with_context(
             ctx = json!({});
         }
         for step in &playbook.steps {
-            match run_step(&state, step, &mut ctx).await {
+            match run_step(&state, &playbook, step, &mut ctx).await {
                 Ok(mut result) => {
                     if let Some(obj) = result.as_object_mut() {
                         if obj.get("kind").and_then(|k| k.as_str()) == Some("approval") {
                             run.status = PlaybookRunStatus::Paused;
                             run.step_results.push(result);
                             run.completed_at = Some(Utc::now());
-                            if let Ok(mut g) = store().runs.write() {
+                            if let Ok(mut g) = run_store().runs.write() {
                                 g.insert(run.id.clone(), run);
                             }
                             return;
@@ -432,7 +611,7 @@ fn spawn_run_with_context(
                     run.status = PlaybookRunStatus::Failed;
                     run.error = Some(e);
                     run.completed_at = Some(Utc::now());
-                    if let Ok(mut g) = store().runs.write() {
+                    if let Ok(mut g) = run_store().runs.write() {
                         g.insert(run.id.clone(), run);
                     }
                     return;
@@ -441,7 +620,7 @@ fn spawn_run_with_context(
         }
         run.status = PlaybookRunStatus::Completed;
         run.completed_at = Some(Utc::now());
-        if let Ok(mut g) = store().runs.write() {
+        if let Ok(mut g) = run_store().runs.write() {
             g.insert(run.id.clone(), run);
         }
     });
@@ -449,7 +628,7 @@ fn spawn_run_with_context(
 
 /// `GET /api/playbooks/runs/:run_id` — status and step results.
 pub async fn get_run(Path(run_id): Path<String>) -> ApiResult<PlaybookRun> {
-    let g = store()
+    let g = run_store()
         .runs
         .read()
         .map_err(|_| err(StatusCode::INTERNAL_SERVER_ERROR, "lock poisoned"))?;
@@ -462,7 +641,7 @@ pub async fn get_run(Path(run_id): Path<String>) -> ApiResult<PlaybookRun> {
 
 /// `GET /api/playbooks/runs` — recent runs (newest first).
 pub async fn list_runs() -> ApiResult<Vec<PlaybookRun>> {
-    let g = store()
+    let g = run_store()
         .runs
         .read()
         .map_err(|_| err(StatusCode::INTERNAL_SERVER_ERROR, "lock poisoned"))?;

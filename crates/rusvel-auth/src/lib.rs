@@ -83,6 +83,16 @@ impl AuthPort for InMemoryAuthAdapter {
         self.store.lock().unwrap().remove(key);
         Ok(())
     }
+
+    async fn list_credential_keys(&self) -> Result<Vec<String>> {
+        Ok(self
+            .store
+            .lock()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>())
+    }
 }
 
 #[cfg(test)]

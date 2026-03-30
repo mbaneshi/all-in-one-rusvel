@@ -1594,6 +1594,41 @@ pub struct FlowCheckpoint {
 }
 
 // ════════════════════════════════════════════════════════════════════
+//  Automation plane — cron/webhook → job worker → flow or playbook (native, no sidecar)
+// ════════════════════════════════════════════════════════════════════
+
+/// Cron `event_kind` for [`crate::domain::JobKind::ScheduledCron`]: payload is [`AutomationTriggerPayload`] JSON inside job `payload.payload`.
+pub const AUTOMATION_CRON_EVENT_KIND: &str = "rusvel.automation.v1";
+
+/// Register webhooks with this `event_kind`; POST body must include `session_id` plus automation fields.
+pub const AUTOMATION_WEBHOOK_EVENT_KIND: &str = "rusvel.automation.trigger";
+
+/// Versioned payload stored in [`CronScheduleRecord::payload`] or webhook body (alongside `session_id`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AutomationTriggerPayload {
+    #[serde(default = "automation_trigger_version_default")]
+    pub version: u32,
+    pub action: AutomationTriggerAction,
+    pub target_id: String,
+    #[serde(default)]
+    pub variables: serde_json::Value,
+    #[serde(default)]
+    pub department_id: Option<String>,
+}
+
+fn automation_trigger_version_default() -> u32 {
+    1
+}
+
+/// What the automation worker runs.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AutomationTriggerAction {
+    RunFlow,
+    RunPlaybook,
+}
+
+// ════════════════════════════════════════════════════════════════════
 //  Playbooks — predefined multi-step pipelines (FlowEngine + delegate_agent)
 // ════════════════════════════════════════════════════════════════════
 
@@ -1637,6 +1672,29 @@ pub enum PlaybookAction {
     },
     Approval {
         message: String,
+    },
+    /// Resolve a stored skill by name (department-scoped like chat `/skill`).
+    Skill {
+        skill_name: String,
+        #[serde(default)]
+        input: String,
+        /// Empty string means use playbook `metadata.department` or `"forge"`.
+        #[serde(default)]
+        department: String,
+    },
+    /// Load [`AgentProfile`] from object store and run `delegate_agent` with merged instructions.
+    AgentProfile {
+        agent_name: String,
+        prompt_template: String,
+        #[serde(default)]
+        tools: Vec<String>,
+    },
+    /// Append matching rules text into `ctx["rules_excerpt"]` for subsequent steps (no LLM call).
+    RulesAppend {
+        department: String,
+        /// Empty = all enabled rules for the department.
+        #[serde(default)]
+        rule_names: Vec<String>,
     },
 }
 

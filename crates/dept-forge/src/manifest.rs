@@ -174,6 +174,7 @@ pub fn forge_manifest() -> DepartmentManifest {
             }
         }),
         default_config: LayeredConfig::default(),
+        terminal: DepartmentTerminalPrefs::default(),
     }
 }
 

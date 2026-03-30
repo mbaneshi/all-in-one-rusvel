@@ -178,3 +178,43 @@ pub async fn resolve_skill(state: &Arc<AppState>, engine: &str, message: &str) -
     let prompt = skill.prompt_template.replace("{{input}}", input);
     Some(prompt)
 }
+
+/// Resolve a skill by display name/slug for playbook steps (no leading `/`).
+pub async fn resolve_skill_by_name_for_playbook(
+    state: &Arc<AppState>,
+    engine: &str,
+    skill_name: &str,
+    input: &str,
+) -> Result<String, String> {
+    let normalized_slug = skill_name
+        .trim()
+        .to_lowercase()
+        .replace('_', "-")
+        .replace(' ', "-");
+
+    let all = state
+        .storage
+        .objects()
+        .list(STORE_KIND, rusvel_core::domain::ObjectFilter::default())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let skills: Vec<SkillDefinition> = all
+        .into_iter()
+        .filter_map(|v| serde_json::from_value(v).ok())
+        .filter(|s: &SkillDefinition| {
+            let skill_engine = s.metadata.get("engine").and_then(|e| e.as_str());
+            skill_engine == Some(engine) || skill_engine.is_none()
+        })
+        .collect();
+
+    let skill = skills
+        .into_iter()
+        .find(|s| {
+            let normalized_name = s.name.to_lowercase().replace([' ', '_'], "-");
+            normalized_name == normalized_slug
+        })
+        .ok_or_else(|| format!("skill '{skill_name}' not found for engine '{engine}'"))?;
+
+    Ok(skill.prompt_template.replace("{{input}}", input))
+}
