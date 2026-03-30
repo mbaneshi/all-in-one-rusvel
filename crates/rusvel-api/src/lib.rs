@@ -192,6 +192,10 @@ pub fn build_router_with_frontend(
         .route("/api/config", axum::routing::put(config::update_config))
         .route("/api/config/models", get(config::list_models))
         .route("/api/config/tools", get(config::list_tools))
+        .route(
+            "/api/config/llm-providers",
+            get(config::llm_providers_status),
+        )
         // Department Registry
         .route("/api/departments", get(department::list_departments))
         // RusvelBase — DB browser (schema, rows, SQL)

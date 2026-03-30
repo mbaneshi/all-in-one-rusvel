@@ -240,6 +240,26 @@ export async function getModels(): Promise<ModelOption[]> {
 	return request('/api/config/models');
 }
 
+/** Live wiring + cheap health probes (CLI `--version`, Ollama /api/tags). No secrets. */
+export interface LlmProviderStatusRow {
+	id: string;
+	display_name: string;
+	wired: boolean;
+	route: string;
+	healthy: boolean | null;
+	detail: string | null;
+}
+
+export interface LlmProvidersReport {
+	providers: LlmProviderStatusRow[];
+	ollama_host: string;
+	ollama_models: string[];
+}
+
+export async function getLlmProviders(): Promise<LlmProvidersReport> {
+	return request('/api/config/llm-providers');
+}
+
 export async function getTools(): Promise<ToolOption[]> {
 	return request('/api/config/tools');
 }

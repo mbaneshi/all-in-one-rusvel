@@ -12,11 +12,13 @@
 		getModels,
 		getTools,
 		getDepartments,
+		getLlmProviders,
 		type Job,
 		type ChatConfig,
 		type ModelOption,
 		type ToolOption,
-		type DepartmentDef
+		type DepartmentDef,
+		type LlmProvidersReport
 	} from '$lib/api';
 	import { invalidate } from '$lib/cache';
 	import { refreshPendingApprovalCount } from '$lib/stores';
@@ -43,6 +45,9 @@
 
 	let departments = $state<DepartmentDef[]>([]);
 	let deptsLoading = $state(true);
+
+	let llmReport = $state<LlmProvidersReport | null>(null);
+	let llmLoading = $state(false);
 
 	const effortLevels = ['low', 'medium', 'high', 'max'] as const;
 	const permissionOptions = [
@@ -159,6 +164,18 @@
 		maxTurnsStr = c.max_turns != null ? String(c.max_turns) : '';
 	}
 
+	async function loadLlmProviders() {
+		llmLoading = true;
+		try {
+			llmReport = await getLlmProviders();
+		} catch (e) {
+			llmReport = null;
+			toast.error(e instanceof Error ? e.message : 'Failed to load LLM provider status');
+		} finally {
+			llmLoading = false;
+		}
+	}
+
 	async function loadAppConfig() {
 		appConfigLoading = true;
 		try {
@@ -179,6 +196,15 @@
 			appConfigLoading = false;
 			deptsLoading = false;
 		}
+	}
+
+	function pickAppModel(value: string) {
+		if (!appConfig) {
+			toast.error('App config still loading');
+			return;
+		}
+		appConfig = { ...appConfig, model: value };
+		toast.message(`Model set to ${value} — press Save app defaults`, { duration: 4000 });
 	}
 
 	async function saveAppDefaults() {
@@ -246,6 +272,7 @@
 	loadApprovals();
 	loadGitHub();
 	loadAppConfig();
+	loadLlmProviders();
 </script>
 
 <div class="p-6">
@@ -254,7 +281,99 @@
 		<a href="/settings/spend" class="text-primary hover:underline">LLM spend dashboard</a>
 	</p>
 
-	<div class="max-w-3xl space-y-6">
+	<div class="max-w-3xl space-y-6 pb-16">
+		<!-- LLM provider wiring + health -->
+		<div class="rounded-xl border border-border bg-card p-5">
+			<div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+				<div>
+					<h2 class="text-sm font-semibold uppercase tracking-wider text-primary">
+						LLM providers
+					</h2>
+					<p class="mt-0.5 text-xs text-muted-foreground leading-relaxed">
+						How the server wired providers at boot + quick reachability (Ollama HTTP, CLI
+						<code class="rounded bg-muted px-0.5">--version</code>). Claude Max / subscription uses
+						<strong>CLI</strong> when <code class="rounded bg-muted px-0.5">ANTHROPIC_API_KEY</code> is
+						unset; API key prefers HTTP (billing errors show on first chat).
+					</p>
+				</div>
+				<button
+					type="button"
+					disabled={llmLoading}
+					onclick={() => void loadLlmProviders()}
+					class="shrink-0 rounded-md border border-border bg-secondary px-3 py-1.5 text-xs hover:bg-muted disabled:opacity-50"
+				>
+					{llmLoading ? 'Checking…' : 'Refresh status'}
+				</button>
+			</div>
+
+			{#if llmLoading && !llmReport}
+				<p class="text-sm text-muted-foreground">Loading provider probes…</p>
+			{:else if !llmReport}
+				<p class="text-sm text-destructive">No provider report (API unreachable).</p>
+			{:else}
+				<div class="grid gap-3 sm:grid-cols-2">
+					{#each llmReport.providers as p (p.id)}
+						<div class="rounded-lg border border-border bg-muted/15 p-3 text-sm">
+							<div class="flex items-start justify-between gap-2">
+								<span class="font-medium text-foreground">{p.display_name}</span>
+								{#if p.healthy === true}
+									<span class="shrink-0 text-xs font-medium text-emerald-500">OK</span>
+								{:else if p.healthy === false}
+									<span class="shrink-0 text-xs font-medium text-destructive">Fail</span>
+								{:else}
+									<span class="shrink-0 text-xs text-muted-foreground">n/a</span>
+								{/if}
+							</div>
+							<p class="mt-1 break-all font-mono text-[10px] text-muted-foreground">{p.route}</p>
+							{#if p.detail}
+								<p class="mt-2 text-xs leading-relaxed text-foreground/85">{p.detail}</p>
+							{/if}
+						</div>
+					{/each}
+				</div>
+
+				<div class="mt-4 border-t border-border pt-4">
+					<p class="mb-2 text-xs font-medium text-muted-foreground">Quick model picks (then Save app defaults)</p>
+					<div class="flex flex-wrap gap-2">
+						<span class="w-full text-[10px] uppercase tracking-wide text-muted-foreground">Claude</span>
+						{#each ['claude/sonnet', 'claude/opus', 'claude/haiku'] as mid}
+							<button
+								type="button"
+								class="rounded border border-border bg-background px-2 py-1 font-mono text-[10px] hover:bg-primary/10"
+								onclick={() => pickAppModel(mid)}>{mid}</button>
+						{/each}
+						<span class="mt-2 w-full text-[10px] uppercase tracking-wide text-muted-foreground"
+							>Cursor</span>
+						{#each ['cursor/sonnet-4', 'cursor/gpt-5', 'cursor/sonnet-4-thinking'] as mid}
+							<button
+								type="button"
+								class="rounded border border-border bg-background px-2 py-1 font-mono text-[10px] hover:bg-primary/10"
+								onclick={() => pickAppModel(mid)}>{mid}</button>
+						{/each}
+					</div>
+				</div>
+
+				{#if llmReport.ollama_models.length > 0}
+					<div class="mt-4">
+						<p class="mb-2 text-xs font-medium text-muted-foreground">
+							Live Ollama models at {llmReport.ollama_host}
+						</p>
+						<div class="max-h-40 overflow-y-auto rounded-md border border-border bg-background/50 p-2">
+							<div class="flex flex-wrap gap-1.5">
+								{#each llmReport.ollama_models as name (name)}
+									<button
+										type="button"
+										title="Set App default to ollama/{name}"
+										class="rounded border border-border px-2 py-0.5 font-mono text-[10px] hover:bg-chart-2/20"
+										onclick={() => pickAppModel(`ollama/${name}`)}>ollama/{name}</button>
+								{/each}
+							</div>
+						</div>
+					</div>
+				{/if}
+			{/if}
+		</div>
+
 		<!-- App defaults (global LLM) -->
 		<div class="rounded-xl border border-border bg-card p-5">
 			<h2 class="mb-1 text-sm font-semibold uppercase tracking-wider text-primary">

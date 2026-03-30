@@ -16,7 +16,7 @@
 		<IconRail />
 		<div class="flex min-h-0 min-w-0 flex-1 flex-col">
 			<TopBar />
-			<main class="min-h-0 flex-1 overflow-hidden">
+			<main class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
 				{@render children()}
 			</main>
 		</div>
