@@ -19,7 +19,7 @@ use rusvel_core::{Result, RusvelError};
 use tokio::sync::{Mutex, broadcast};
 
 pub use network::NetworkCapture;
-pub use platforms::upwork;
+pub use platforms::{freelancer, upwork};
 pub use pool::{CdpPool, ChromeProfileConfig};
 
 /// Chrome DevTools Protocol client (passive foundation + network capture).

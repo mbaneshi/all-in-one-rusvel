@@ -79,7 +79,11 @@ async fn run_network_inner(
                 if !json_like {
                     continue;
                 }
-                if url.contains("upwork.com") || platforms::upwork::matches_capture_url(url) {
+                if url.contains("upwork.com")
+                    || platforms::upwork::matches_capture_url(url)
+                    || url.contains("freelancer.com")
+                    || platforms::freelancer::matches_capture_url(url)
+                {
                     pending_urls.insert(request_id.to_string(), url.to_string());
                 }
             }
