@@ -60,7 +60,7 @@ pub trait ChannelPort: Send + Sync {
 }
 ```
 
-`ChannelPort` is one of the 21 port traits in `rusvel-core`. It defines a minimal interface: identify the channel kind (e.g., `"telegram"`) and send a message with a JSON payload scoped to a session.
+`ChannelPort` is one of the 22 port traits in `rusvel-core`. It defines a minimal interface: identify the channel kind (e.g., `"telegram"`) and send a message with a JSON payload scoped to a session.
 
 ### The Adapter: TelegramChannel (rusvel-channel)
 

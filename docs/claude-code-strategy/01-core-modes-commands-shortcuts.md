@@ -93,7 +93,7 @@ cargo test --message-format json | claude -p "Summarize test results"
 
 | Command | RUSVEL Use |
 |---------|-----------|
-| `/compact` | Essential — RUSVEL is ~62k lines of Rust across 54 workspace members ([`docs/status/current-state.md`](../status/current-state.md)). Compact when context fills up mid-session |
+| `/compact` | Essential — RUSVEL is ~69k lines of Rust across 55 workspace members ([`docs/status/current-state.md`](../status/current-state.md)). Compact when context fills up mid-session |
 | `/context` | Check how much room is left before starting a cross-crate refactor |
 | `/diff` | Review changes across multiple crates before committing |
 | `/export` | Save architecture discussion sessions for docs |

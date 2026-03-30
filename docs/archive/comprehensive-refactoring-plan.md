@@ -2,7 +2,7 @@
 
 > Design pattern alignment, concept hierarchy, extensibility, and scalability.
 > Applies Gang of Four patterns (Rust-idiomatic), DDD, SOLID, Clean Architecture,
-> and modern system design patterns to a 54-crate hexagonal Rust + SvelteKit monorepo.
+> and modern system design patterns to a 55-crate hexagonal Rust + SvelteKit monorepo.
 
 ---
 
@@ -14,7 +14,7 @@
 | **Date** | 2026-03-28 |
 | **Architecture baseline** | [docs/design/architecture-v2.md](../design/architecture-v2.md) |
 | **ADRs** | [docs/design/decisions.md](../design/decisions.md) (ADR-001 through ADR-014) |
-| **Codebase** | 54 crates, ~64K lines Rust, 57 Svelte components |
+| **Codebase** | 55 crates, ~69K lines Rust, 57 Svelte components |
 
 **Scope:** Structural refactoring for pattern adherence, extensibility, and scalability — not feature work.
 
@@ -1482,7 +1482,7 @@ impl Projection for DepartmentActivityProjection {
 | **Full actor framework** (actix actors) | Clean message passing | Adds complexity without benefit at single-binary scale. `tokio::spawn` + channels is sufficient |
 | **Full event sourcing** (aggregate reconstitution from events) | Perfect audit trail | High query complexity. ObjectStore + EventPort combination is appropriate until audit trails are explicitly required |
 | **Dynamic `.so` plugin loading** | Hot-reload departments | Rust has no stable ABI. Single binary is strictly superior. Use WASM if needed |
-| **Generic trait bounds on stored structs** | Avoids vtable overhead | Monomorphization across 54 crates causes compile time bloat. Prefer `Arc<dyn Trait>` |
+| **Generic trait bounds on stored structs** | Avoids vtable overhead | Monomorphization across 55 crates causes compile time bloat. Prefer `Arc<dyn Trait>` |
 | **Typestate everywhere** | Compile-time state safety | More than ~5 states becomes unmaintainable. Typestate can't survive serde boundaries. Use for internal hot paths only |
 | **Global static singletons** | Easy access to shared state | Breaks testability. Pass `Arc<T>` via constructors |
 | **Premature abstraction** | "What if we need to..." | Build for today's 14 departments, not hypothetical 100. Extract patterns after 3+ instances |

@@ -20,4 +20,4 @@ When asked to research a topic:
    - Official documentation links
 
 Always distinguish between verified facts and inferred information.
-Consider RUSVEL's constraints: single binary, SQLite WAL, tokio async, 54-crate workspace.
+Consider RUSVEL's constraints: single binary, SQLite WAL, tokio async, 55-crate workspace.

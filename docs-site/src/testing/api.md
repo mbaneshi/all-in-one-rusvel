@@ -261,7 +261,7 @@ curl -N http://localhost:3000/api/dept/code/chat \
 2. `tool_call` -- `{"name": "read_file", "input": {"path": "Cargo.toml"}}`
 3. `tool_result` -- file contents
 4. `text_delta` -- agent interprets results
-5. `done` -- final answer mentions "54 workspace members"
+5. `done` -- final answer mentions "55 workspace members" (or `docs/status/current-state.md`)
 
 ## Scoped Tool Registry
 

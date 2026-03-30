@@ -18,7 +18,7 @@ Custom AI agents with scoped tools, models, and system prompts. Invoke with `@na
 | Tools | Read, Grep, Glob, WebSearch, WebFetch |
 | Model | Sonnet |
 
-Searches existing codebase first, then the web. Returns structured findings with trade-offs and crate recommendations. Considers RUSVEL constraints (single binary, SQLite WAL, tokio, 54-crate workspace).
+Searches existing codebase first, then the web. Returns structured findings with trade-offs and crate recommendations. Considers RUSVEL constraints (single binary, SQLite WAL, tokio, 55-crate workspace).
 
 ### arch-reviewer
 

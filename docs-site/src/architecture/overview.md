@@ -46,7 +46,7 @@ RUSVEL follows **hexagonal architecture** (ports and adapters). The core princip
 
 The heart of the system. Contains:
 
-- **21 port traits** in `ports.rs` — includes five `*Store` subtraits under the storage model, **`BrowserPort`**, **`ChannelPort`**, and primary ports (LlmPort, AgentPort, ToolPort, EventPort, StoragePort, MemoryPort, JobPort, SessionPort, AuthPort, ConfigPort, EmbeddingPort, VectorStorePort, DeployPort, TerminalPort). `DepartmentApp` is defined under `department/`.
+- **22 port traits** in `ports.rs` — includes five `*Store` subtraits under the storage model, **`BrowserPort`**, **`ChannelPort`**, **`RusvelBasePort`**, and primary ports (LlmPort, AgentPort, ToolPort, EventPort, StoragePort, MemoryPort, JobPort, SessionPort, AuthPort, ConfigPort, EmbeddingPort, VectorStorePort, DeployPort, TerminalPort). `DepartmentApp` is defined under `department/`.
 - **~100** `pub struct` / `pub enum` in `domain.rs`, plus shared types — Session, Goal, Event, Agent, Content, Opportunity, Contact, Task, DepartmentManifest, etc.
 - Zero framework dependencies
 
@@ -117,8 +117,8 @@ The binary entry point. It constructs all adapters, injects them into engines, a
 
 ```
 rusvel/
-├── crates/                   54 workspace members
-│   ├── rusvel-core/          21 port traits in ports.rs + domain types + DepartmentApp
+├── crates/                   55 workspace members
+│   ├── rusvel-core/          22 port traits in ports.rs + domain types + DepartmentApp
 │   ├── rusvel-db/            SQLite WAL + 5 canonical stores
 │   ├── rusvel-llm/           4 LLM providers
 │   ├── rusvel-agent/         Agent runtime (LLM+Tool+Memory)
@@ -160,7 +160,7 @@ rusvel/
 │   ├── rusvel-mcp/           MCP server (stdio JSON-RPC)
 │   └── rusvel-app/           Binary entry point
 ├── frontend/                 SvelteKit 5 + Tailwind 4
-├── Cargo.toml                Workspace manifest (54 members)
+├── Cargo.toml                Workspace manifest (55 members)
 └── CLAUDE.md                 Project conventions
 ```
 

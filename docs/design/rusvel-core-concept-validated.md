@@ -1,8 +1,8 @@
 # RUSVEL — Core Concept & Design (Code-Validated)
 
-> **Purpose:** Validate the high-level pitch (“single binary agency”, hexagonal architecture, 54 crates, scoped tools, etc.) against this repository.  
+> **Purpose:** Validate the high-level pitch (“single binary agency”, hexagonal architecture, 55 crates, scoped tools, etc.) against this repository.  
 > **Companion:** [rusvel-domain-minibook.md](./rusvel-domain-minibook.md) (runtime / dept chat detail).  
-> **Last validated:** 2026-03-28.
+> **Last validated:** 2026-03-30 (metrics aligned with [`docs/status/current-state.md`](../status/current-state.md); narrative claims in §2–7 not all re-audited).
 
 ---
 
@@ -12,7 +12,7 @@
 2. [Claim-by-claim validation](#2-claim-by-claim-validation)
 3. [Architecture layers (with citations)](#3-architecture-layers-with-citations)
 4. [Boot & chat path (with citations)](#4-boot--chat-path-with-citations)
-5. [Workspace 54 crates — table sanity](#5-workspace-54-crates--table-sanity)
+5. [Workspace member count — table sanity](#5-workspace-member-count--table-sanity)
 6. [Local-first & offline](#6-local-first--offline)
 7. [Important corrections (tool scoping)](#7-important-corrections-tool-scoping)
 8. [Suggested narrative edits](#8-suggested-narrative-edits)
@@ -28,7 +28,7 @@ Corrections that matter for accuracy:
 | Area | Pitch says | Code says |
 |------|------------|-----------|
 | `rusvel-core` | “Zero dependencies” | Has normal library deps (`serde`, `tokio`, `chrono`, …) — **no framework**, not zero deps. |
-| Port traits | “20” | **21** top-level / store traits in `ports.rs` (see §3). |
+| Port traits | “20” | **22** top-level / store traits in `ports.rs` (see §3), including `RusvelBasePort`. |
 | Per-dept tools | Scoped tools / “only tools department declared” | **`AgentRuntime` does not filter the LLM tool list with `AgentConfig.tools` today**; initial tools = all **non-searchable** tools from the shared `ToolPort`. `ScopedToolRegistry` exists in `rusvel-tool` but is **not** constructed in `rusvel-app` `main.rs`. See §7. |
 | `cargo install rusvel` | Everything offline | App can run locally, but **LLM/embeddings/vector** often need network or local Ollama; not “full agency offline” without setup. |
 
@@ -70,7 +70,7 @@ tokio = { workspace = true }
 
 **Better phrase:** *Zero application/framework coupling* — only shared primitives and port definitions.
 
-**Port count:** `rg '^pub trait ' crates/rusvel-core/src/ports.rs` yields **21** traits (including `EventStore`, `ObjectStore`, `SessionStore`, `JobStore`, `MetricStore` under the storage split). `docs/status/current-state.md` uses **21**.
+**Port count:** `rg '^pub trait ' crates/rusvel-core/src/ports.rs` yields **22** traits (including `EventStore`, `ObjectStore`, `SessionStore`, `JobStore`, `MetricStore` under the storage split, plus `RusvelBasePort`). `docs/status/current-state.md` uses **22**.
 
 **Domain types “82+”:** `domain.rs` has on the order of **100+** `pub struct` / `pub enum` lines (repo metric ~111 in `current-state.md`). “82+” is conservative, not wrong.
 
@@ -103,9 +103,9 @@ tokio = { workspace = true }
 
 **Right** — reflected in `domain.rs`, `AgentRuntime` module docs, and `tool_search` registration in `main.rs`.
 
-### 54-crate workspace table
+### 55-member workspace table
 
-**Right total:** `Cargo.toml` `members` has **54** entries (verify with `cargo metadata --no-deps`). Individual row counts (18/13/14/4/1/3) are **illustrative**; small re-bucketing may not sum the same way if you move `rusvel-schema` or `dept-messaging`.
+**Right total:** `Cargo.toml` `members` has **55** entries (verify with `cargo metadata --no-deps`). Individual row counts in older pitch decks are **illustrative**; small re-bucketing may not sum the same way if you move `rusvel-schema`, `dept-messaging`, or `rusvel-pipeline`.
 
 ### “Every crate &lt; 2000 lines”
 
@@ -217,15 +217,15 @@ There is **no** `config.tools` filter in this snippet — `AgentConfig.tools` is
 
 ---
 
-## 5. Workspace 54 crates — table sanity
+## 5. Workspace member count — table sanity
 
 Root workspace members (excerpt):
 
-```3:65:Cargo.toml
+```3:66:Cargo.toml
 members = [
     "crates/rusvel-core",
     "crates/rusvel-schema",
-    // ... adapters & dept-messaging ...
+    // ... adapters, rusvel-pipeline, dept-messaging ...
     "crates/forge-engine",
     // ... 13 engines ...
     "crates/dept-forge",
@@ -238,7 +238,7 @@ members = [
 ]
 ```
 
-**54** members — matches `docs/status/current-state.md`.
+**55** members — matches `docs/status/current-state.md`.
 
 ---
 
@@ -271,7 +271,7 @@ Use these replacements in slide decks / onboarding copy:
 | Instead of | Say |
 |------------|-----|
 | “rusvel-core has zero dependencies” | “rusvel-core has **no framework deps** — only serde/tokio/chrono/uuid and port definitions.” |
-| “20 port traits” | “**21** port/store traits in `ports.rs` (see metrics doc).” |
+| “20 port traits” | “**22** port/store traits in `ports.rs` (see metrics doc).” |
 | “ScopedToolRegistry restricts tools per department in chat” | “**Design:** per-department tool filtering via `ScopedToolRegistry` / allowed lists. **Current `AgentRuntime`:** initial LLM tools = all non-searchable registered tools + `tool_search` discovery; see `rusvel-agent` loop.” |
 | “cargo install → offline agency” | “**Local-first** storage and UI; **LLM** requires Ollama or configured cloud provider.” |
 

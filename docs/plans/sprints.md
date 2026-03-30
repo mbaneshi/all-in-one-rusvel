@@ -11,7 +11,7 @@
 
 **Build:** `cargo build` clean (0 errors). `cargo test` 0 failures in full local run.
 
-**Metrics glossary:** [`docs/status/current-state.md`](../status/current-state.md) — **54** workspace members, **~68,443** LOC in `crates/*.rs`, **293** Rust files under `crates/`, **~635** tests (workspace sum), **~100** test targets from `cargo test --no-run`, **141** `.route(` chains in `rusvel-api/src/lib.rs`, **36** API handler modules (excluding `lib.rs`). Older docs used different counts; use **§1** in `current-state` only.
+**Metrics glossary:** [`docs/status/current-state.md`](../status/current-state.md) — **55** workspace members, **~69,456** LOC in `crates/*.rs`, **295** Rust files under `crates/`, **~636** tests (workspace sum), **~101** test targets from `cargo test --no-run`, **141** `.route(` chains in `rusvel-api/src/lib.rs`, **36** API handler modules (excluding `lib.rs`). Older docs used different counts; use **§1** in `current-state` only.
 
 **Git:** See working tree; not tracked here.
 

@@ -216,7 +216,7 @@ $ rusvel --tui                   # Full-screen terminal dashboard
 
 **Canonical numbers and wiring** (workspace members, LOC, tests, routes, ports): [`docs/status/current-state.md`](../status/current-state.md).
 
-At a glance: **54** workspace crates, **21** port traits in `rusvel-core`, **14** booted `DepartmentApp` departments (including `dept-messaging` last in boot order), **13** domain engines, **22+** registered agent tools, **AgentRuntime** streaming, **ModelTier** routing, embedded SvelteKit UI, **3-tier CLI** (one-shot + REPL + TUI), **6** MCP stdio tools.
+At a glance: **55** workspace crates, **22** port traits in `rusvel-core`, **14** booted `DepartmentApp` departments (including `dept-messaging` last in boot order), **13** domain engines, **22+** registered agent tools, **AgentRuntime** streaming, **ModelTier** routing, embedded SvelteKit UI, **3-tier CLI** (one-shot + REPL + TUI), **6** MCP stdio tools.
 
 ## What RUSVEL Is NOT
 

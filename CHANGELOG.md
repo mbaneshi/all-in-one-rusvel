@@ -148,7 +148,7 @@ First working release — 190 commits across 7 days. 54 crates, ~62K lines of Ru
 - LLM spend aggregation by department
 
 ### Testing
-- ~635 tests across workspace (sum of `running N tests` lines; see `docs/status/current-state.md`)
+- ~636 tests across workspace (sum of `running N tests` lines; see `docs/status/current-state.md`)
 - 65 DepartmentApp contract tests for all 13 departments
 - 25 integration tests for 5 engine/adapter crates
 - 14 CLI arg parsing tests + 8 TUI widget rendering tests

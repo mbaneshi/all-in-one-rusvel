@@ -1,6 +1,6 @@
 # RUSVEL — Roadmap v2 (Post-Review)
 
-> 13 engines (6 wired + 7 skeletons). 54 crates. DepartmentApp pattern. Central job queue. Session-centric everything.
+> 13 engines (6 wired + 7 skeletons). 55 crates. DepartmentApp pattern. Central job queue. Session-centric everything.
 
 ---
 
@@ -9,7 +9,7 @@
 
 **Deliverable:** `rusvel forge mission today` via CLI, Web, MCP, REPL, TUI.
 
-- rusvel-core (20 port traits: 15 Port + 5 Store + 82 domain types + DepartmentApp/Manifest + approval model)
+- rusvel-core (22 port traits in `ports.rs`: 15 primary + 5 Store + `ChannelPort` + `BrowserPort` + `RusvelBasePort`; domain types + DepartmentApp/Manifest + approval model — see `current-state.md`)
 - Adapters: config, db (5 stores), schema, event, llm (4 providers + ModelTier + CostTracker), memory (FTS5), tool (ScopedToolRegistry), builtin-tools, engine-tools, mcp-client, jobs, embed, vector, deploy, auth, terminal
 - forge-engine + code-engine + content-engine + harvest-engine + flow-engine + gtm-engine (all wired)
 - 14 dept-* crates implementing DepartmentApp trait (ADR-014, EngineKind removed)
@@ -97,11 +97,11 @@
 
 | Phase | New Crates | Total |
 |-------|-----------|-------|
-| 0 | 54 (20 foundation + 13 engines + 14 dept-* + 4 surfaces + 3 infra) | 54 |
-| 1 | 0 (expand existing) | 54 |
-| 2 | 0 (expand existing) | 54 |
-| 3 | 0 (expand existing) | 54 |
-| 4 | 0 (expand existing) | 54 |
-| 5 | +N (plugins, new adapters) | 54+N |
+| 0 | 55 (23 `rusvel-*` foundation incl. pipeline + 13 engines + 14 dept-* + 5 surfaces) | 55 |
+| 1 | 0 (expand existing) | 55 |
+| 2 | 0 (expand existing) | 55 |
+| 3 | 0 (expand existing) | 55 |
+| 4 | 0 (expand existing) | 55 |
+| 5 | +N (plugins, new adapters) | 55+N |
 
-**Note:** Crate count grew from original plan of 20 to 54. Growth: 20 → 27 (early adapters) → 34 (schema, embed, vector, deploy, builtin-tools, mcp-client, flow-engine) → 48 (13 dept-* crates for DepartmentApp pattern + rusvel-engine-tools + rusvel-terminal) → 54 (webhook, cron, dept-messaging, cdp, channel, additional adapters). The architecture holds — all growth was in foundation adapters, department encapsulation, and the tool system.
+**Note:** Crate count grew from original plan of 20 to **55**. Growth: 20 → 27 (early adapters) → 34 (schema, embed, vector, deploy, builtin-tools, mcp-client, flow-engine) → 48 (13 dept-* crates for DepartmentApp pattern + rusvel-engine-tools + rusvel-terminal) → 54 (webhook, cron, dept-messaging, cdp, channel) → **55** (`rusvel-pipeline`: forge pipeline runner wiring harvest + content, keeps `forge-engine` free of those deps). The architecture holds — growth stayed in foundation adapters, department encapsulation, and composition crates.

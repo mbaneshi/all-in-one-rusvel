@@ -24,7 +24,7 @@ RUSVEL already has a strong CLAUDE.md (96 lines) with:
 - Quick commands (build, test, run)
 - Architecture overview (hexagonal, ports & adapters)
 - 7 key rules (engines never import adapters, use AgentPort not LlmPort, etc.)
-- Full workspace layout (54 workspace members per `current-state`)
+- Full workspace layout (55 workspace members per `current-state`)
 - Wired features list (MCP, TUI, frontend embedding — all wired)
 - Testing commands per crate
 - Stack description
@@ -95,7 +95,7 @@ Create per-area CLAUDE.md files that load only when working in that directory:
 
 ### Why Rules Matter for RUSVEL
 
-RUSVEL has **54** Rust workspace members + a SvelteKit frontend + docs (see [`docs/status/current-state.md`](../status/current-state.md)). Different files need different rules. Rules load **only when relevant files are in context**, keeping the context window lean.
+RUSVEL has **55** Rust workspace members + a SvelteKit frontend + docs (see [`docs/status/current-state.md`](../status/current-state.md)). Different files need different rules. Rules load **only when relevant files are in context**, keeping the context window lean.
 
 ### Rules to Create
 

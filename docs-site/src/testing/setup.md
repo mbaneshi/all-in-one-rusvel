@@ -6,7 +6,7 @@
 cargo build
 ```
 
-**Expected:** Compiles 54 workspace members. Zero errors. Warnings are acceptable.
+**Expected:** Compiles 55 workspace members. Zero errors. Warnings are acceptable.
 
 ## Run Automated Tests First
 
@@ -14,7 +14,7 @@ cargo build
 cargo test
 ```
 
-**Expected:** ~635 tests pass (workspace sum), 0 failures. Some tests may be ignored (PTY tests in sandboxed environments).
+**Expected:** ~636 tests pass (workspace sum), 0 failures. Some tests may be ignored (PTY tests in sandboxed environments).
 
 ## Required Services
 

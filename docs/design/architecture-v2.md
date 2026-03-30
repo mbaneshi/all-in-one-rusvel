@@ -486,7 +486,7 @@ pub struct Event {
 ```
 rusvel-app (binary, composition root)
 ├── rusvel-cli
-├── rusvel-api (Axum, 141 route chains across 36 modules) ── serves SPA via fallback
+├── rusvel-api (Axum, 141 route chains across 36 handler modules beside lib.rs) ── serves SPA via fallback
 ├── rusvel-tui (Ratatui)
 ├── rusvel-mcp (rmcp, 6 tools)
 │
@@ -538,12 +538,12 @@ rusvel-app (binary, composition root)
 └── rusvel-config ────┘
 ```
 
-## Workspace (updated 2026-03-26)
+## Workspace (updated 2026-03-30)
 
 ```
 rusvel/
 ├── crates/
-│   ├── rusvel-core/          ← 20 port traits (15 Port + 5 Store) + 82 domain types + DepartmentApp/Manifest
+│   ├── rusvel-core/          ← 22 port traits (15 primary + 5 Store + ChannelPort + BrowserPort + RusvelBasePort) + domain types + DepartmentApp/Manifest
 │   ├── rusvel-schema/        ← DB schema introspection (RusvelBase)
 │   ├── rusvel-db/            ← SQLite WAL + 5 canonical stores
 │   ├── rusvel-llm/           ← LlmPort: Ollama, OpenAI, Claude API, CLI + ModelTier + CostTracker
@@ -551,7 +551,7 @@ rusvel/
 │   ├── rusvel-event/         ← EventPort bus + persistence
 │   ├── rusvel-memory/        ← MemoryPort + session-namespaced search
 │   ├── rusvel-tool/          ← ScopedToolRegistry + deferred loading + JSON Schema
-│   ├── rusvel-builtin-tools/ ← 9 built-in tools for agent execution
+│   ├── rusvel-builtin-tools/ ← 10 built-in tools (9 + tool_search meta-tool)
 │   ├── rusvel-engine-tools/  ← 12 engine-specific tools (code, content, harvest, etc.)
 │   ├── rusvel-mcp-client/    ← MCP client for external MCP server connections
 │   ├── rusvel-jobs/          ← Central job queue
@@ -563,6 +563,10 @@ rusvel/
 │   ├── rusvel-terminal/      ← TerminalPort adapter
 │   ├── rusvel-webhook/       ← Webhook registration + dispatch
 │   ├── rusvel-cron/          ← Cron scheduling adapter
+│   ├── rusvel-cdp/           ← BrowserPort / Chrome DevTools client
+│   ├── rusvel-channel/       ← ChannelPort + Telegram (outbound notify)
+│   ├── rusvel-pipeline/      ← Forge pipeline step runner (harvest + content; lean forge-engine)
+│   ├── dept-messaging/       ← DepartmentApp shell (registered with foundation block in workspace)
 │   │
 │   ├── forge-engine/         ← Agent orchestration + Mission (goals/planning) [WIRED]
 │   ├── code-engine/          ← Code intelligence: parser, graph, BM25 [WIRED]
@@ -591,7 +595,6 @@ rusvel/
 │   ├── dept-legal/           ← DepartmentApp for Legal [NEW]
 │   ├── dept-support/         ← DepartmentApp for Support [NEW]
 │   ├── dept-infra/           ← DepartmentApp for Infra [NEW]
-│   ├── dept-messaging/       ← DepartmentApp for Messaging [NEW]
 │   │
 │   ├── rusvel-api/           ← Axum HTTP: 141 route chains, 36 modules
 │   ├── rusvel-cli/           ← 3-tier CLI: one-shot (Clap) + REPL (reedline) + dept subcommands
@@ -604,7 +607,7 @@ rusvel/
 └── CLAUDE.md
 ```
 
-54 crates. 13 engines (6 wired + 7 skeletons) + 14 dept-* crates + 20 adapters + 4 surfaces.
+**55** workspace members — **28** `rusvel-*`, **13** `*-engine`, **14** `dept-*` (includes `dept-messaging` and `rusvel-pipeline` in the `rusvel-*` set). Thirteen engines are six wired (Forge, Code, Harvest, Content, Flow, GTM) plus seven stubs. See [`docs/status/current-state.md`](../status/current-state.md) §1 for canonical counts.
 
 ### AgentRuntime Streaming + Tool Loop
 

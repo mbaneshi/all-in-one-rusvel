@@ -6,9 +6,9 @@
 ## Quick Commands
 
 ```bash
-cargo build                    # Build all workspace members (54 crates)
+cargo build                    # Build all workspace members (55 crates)
 cargo bench -p rusvel-app --bench boot  # Criterion boot slice (SQLite + registry); optional local perf
-cargo test                     # Run full suite from repo root (~635 tests summed; see docs/status/current-state.md)
+cargo test                     # Run full suite from repo root (~636 tests summed; see docs/status/current-state.md)
 cargo run                      # Start API server on :3000 (requires Ollama)
 cargo run -- --help            # Show CLI help
 cargo run -- --mcp             # Start MCP server (stdio JSON-RPC)
@@ -26,7 +26,7 @@ cargo run -- growth list       # List department items
 
 Hexagonal (ports & adapters). See `docs/design/architecture-v2.md`.
 
-- **rusvel-core** — 21 port traits in `ports.rs` (includes five `*Store` subtraits, `ChannelPort`, `BrowserPort`, etc.) + domain types + `DepartmentApp` + `DepartmentManifest`. Zero framework deps.
+- **rusvel-core** — 22 port traits in `ports.rs` (includes five `*Store` subtraits, `ChannelPort`, `BrowserPort`, `RusvelBasePort`, etc.) + domain types + `DepartmentApp` + `DepartmentManifest`. Zero framework deps.
 - **Adapters** — Implement port traits (rusvel-db, rusvel-llm, rusvel-agent, etc.)
 - **Engines** — Domain logic, depend ONLY on rusvel-core traits (13 engines: 6 wired + 7 skeletons, all migrated to DepartmentApp pattern via ADR-014)
 - **dept-* wrappers** — 14 `dept-*` crates (including dept-flow, dept-messaging), each implementing DepartmentApp
@@ -45,11 +45,11 @@ Hexagonal (ports & adapters). See `docs/design/architecture-v2.md`.
 8. **NEVER use npm.** Use `pnpm` for all frontend/Node.js work. (`pnpm install`, `pnpm build`, `pnpm exec`).
 9. **NEVER use pip/pip3/python -m pip.** Use `uv` for all Python work. (`uv run`, `uv add`, `uv sync`).
 
-## Workspace Layout (54 members)
+## Workspace Layout (55 members)
 
 ```
 crates/
-├── rusvel-core/          Ports (20 traits in ports.rs) + domain types + DepartmentApp trait + DepartmentManifest
+├── rusvel-core/          Ports (22 traits in ports.rs) + domain types + DepartmentApp trait + DepartmentManifest
 ├── rusvel-schema/        Database schema introspection (RusvelBase)
 ├── rusvel-db/            SQLite WAL + migrations
 ├── rusvel-llm/           4 providers: Ollama, OpenAI, Claude API, Claude CLI + multi-router + ModelTier routing
@@ -61,6 +61,7 @@ crates/
 ├── rusvel-engine-tools/  12 engine tools (harvest 5, content 5, code 2)
 ├── rusvel-mcp-client/    MCP client for external MCP servers
 ├── rusvel-channel/       ChannelPort + Telegram adapter (outbound notify)
+├── rusvel-pipeline/      Forge pipeline step runner (harvest + content; keeps forge-engine lean)
 ├── rusvel-jobs/          Central job queue + approval
 ├── rusvel-auth/          In-memory credential storage (from env)
 ├── rusvel-config/        TOML config + per-session overrides
@@ -194,7 +195,7 @@ pnpm test:analyze              # AI-powered visual diff analysis (Claude Vision)
 ## Testing
 
 ```bash
-cargo test                     # Full workspace from repo root (~635 tests summed; counts vary by cargo output)
+cargo test                     # Full workspace from repo root (~636 tests summed; counts vary by cargo output)
 cargo test -p rusvel-core      # Single crate
 cargo test -p forge-engine     # Engine tests (15 tests, use mock ports)
 cargo test -p content-engine   # Content engine (7 tests)
@@ -271,7 +272,7 @@ uv run --with anthropic ...    # One-off with extra deps
 
 ## Stack
 
-- Rust edition 2024, SQLite WAL, Axum, Clap 4, reedline, ratatui, tokio (~68,443 lines Rust under `crates/`, 293 source files — see `docs/status/current-state.md`)
+- Rust edition 2024, SQLite WAL, Axum, Clap 4, reedline, ratatui, tokio (~69,456 lines Rust under `crates/`, 295 source files — see `docs/status/current-state.md`)
 - SvelteKit 5, Tailwind CSS 4, **pnpm** package manager
 - Python scripts: **uv** (pyproject.toml at workspace root)
 - LLM: Ollama (local), Claude API, Claude CLI, OpenAI — all implemented

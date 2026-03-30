@@ -133,7 +133,7 @@
 ## Definition of Done for Phase 0
 
 - [x] `cargo build --release` → single binary
-- [x] 54 workspace members compile (see root `Cargo.toml`; includes `dept-messaging`, webhooks, cron, channel, etc.)
+- [x] 55 workspace members compile (see root `Cargo.toml`; includes `rusvel-pipeline`, `dept-messaging`, webhooks, cron, channel, etc.)
 - [x] `rusvel session create "my-project"` → creates session
 - [x] `rusvel forge mission today` → generates daily plan via LLM
 - [x] `rusvel` → opens web dashboard with session view

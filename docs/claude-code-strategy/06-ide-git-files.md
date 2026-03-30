@@ -151,7 +151,7 @@ fi
 ### Multi-Format Support for RUSVEL
 
 **Code files (all formats):**
-- Rust (`.rs`) — 54 workspace members, primary language ([`docs/status/current-state.md`](../status/current-state.md))
+- Rust (`.rs`) — 55 workspace members, primary language ([`docs/status/current-state.md`](../status/current-state.md))
 - Svelte (`.svelte`) — frontend components and pages
 - TypeScript (`.ts`) — frontend logic, stores, API client
 - CSS (`.css`) — app.css with design tokens

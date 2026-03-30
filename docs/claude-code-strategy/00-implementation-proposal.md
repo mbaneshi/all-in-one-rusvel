@@ -302,7 +302,7 @@ Frontend without reliable LLM backend shows empty states. Fix the engine before 
 CI/CD guards code that exists. We need to write the code first (expose engines, wire MCP, build approval flow). CI/CD in Week 3 guards everything we built in Weeks 1-2.
 
 ### "Why not skip subagents and just code?"
-A solo builder working **54** workspace members cannot hold all conventions in their head (see [`docs/status/current-state.md`](../status/current-state.md)). Subagents enforce conventions by construction. The `rust-engine` subagent literally cannot import adapter crates because its system prompt forbids it. This prevents the #1 architectural risk.
+A solo builder working **55** workspace members cannot hold all conventions in their head (see [`docs/status/current-state.md`](../status/current-state.md)). Subagents enforce conventions by construction. The `rust-engine` subagent literally cannot import adapter crates because its system prompt forbids it. This prevents the #1 architectural risk.
 
 ### "Why skills before second engine?"
 Because the `/wire-engine` skill is used to expose the second engine. Building the skill first means the second AND third AND fourth engine all benefit. Tool before task.

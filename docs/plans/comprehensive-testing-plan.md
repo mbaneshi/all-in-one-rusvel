@@ -79,7 +79,7 @@ This document merges **workstreams** (what to test, with detailed checklists) an
 
 | Area | Count | Quality |
 |------|-------|---------|
-| Rust tests (workspace sum) | ~635 | Good coverage on engines, sparse on adapters; see `docs/status/current-state.md` |
+| Rust tests (workspace sum) | ~636 | Good coverage on engines, sparse on adapters; see `docs/status/current-state.md` |
 | Rust integration tests | ~92 | Strong API smoke tests, engine round-trips |
 | Benchmarks | 2 | DB open + registry load (Criterion) |
 | Frontend visual tests | 27 routes | Playwright screenshot comparison |

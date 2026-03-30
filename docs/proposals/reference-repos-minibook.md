@@ -175,7 +175,7 @@ informing RUSVEL's MCP server and Claude Code integration patterns.
 
 ### 3.1 Architecture Overview
 
-RUSVEL is a 54-member Rust workspace (~68,443 LOC under `crates/*.rs`) implementing hexagonal
+RUSVEL is a 55-member Rust workspace (~69,456 LOC under `crates/*.rs`) implementing hexagonal
 architecture with ports & adapters:
 
 ```
@@ -192,7 +192,7 @@ architecture with ports & adapters:
         +-----+-----+         +------+------+
         |   Ports    |         |  Adapters   |
         | (core)     |         | (db, llm,   |
-        | 21 traits  |         |  agent...)  |
+        | 22 traits  |         |  agent...)  |
         +------------+         +-------------+
 ```
 
@@ -200,7 +200,7 @@ architecture with ports & adapters:
 
 | Area | Status | Details |
 |------|--------|---------|
-| Hexagonal architecture | Solid | 21 port traits, clean boundaries enforced |
+| Hexagonal architecture | Solid | 22 port traits, clean boundaries enforced |
 | DepartmentApp pattern | Solid | 14 dept-* crates, ADR-014 implemented |
 | Agent runtime | Mature | Streaming, tool-use loop, context packing, verification |
 | Tool registry | Solid | 22 tools, permission system, scoped views |

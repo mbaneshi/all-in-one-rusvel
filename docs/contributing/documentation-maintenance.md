@@ -14,7 +14,7 @@ From the repository root:
 
 ```bash
 # Stale crate / workspace wording
-rg -n '48 crate|49 crate|50 workspace members' --glob '*.md' .
+rg -n '48 crate|49 crate|50 workspace members|54 workspace members|54 crates\)' --glob '*.md' .
 
 # Stale LOC / file counts
 rg -n '43,670|52,560|185 source|215 Rust' --glob '*.md' .

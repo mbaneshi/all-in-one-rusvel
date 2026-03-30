@@ -30,7 +30,9 @@ RUSVEL is a **hexagonal (ports & adapters)** Rust monorepo: **`rusvel-core`** de
 | **Axum `.route(` lines** | **132** | `rg '\.route\(' crates/rusvel-api/src/lib.rs \| wc -l` |
 | **`rusvel-api` `src/*.rs` modules** | **31** + `lib.rs` | directory listing (handler/feature modules) |
 
-**Workspace growth vs. older docs:** Root `Cargo.toml` lists **54** members, including newer infrastructure crates such as **`rusvel-webhook`**, **`rusvel-cron`**, **`rusvel-channel`**, and **`dept-messaging`**—these explain the jump past historical “50 crates” figures in `docs/status/current-state.md`.
+**2026-03-30 refresh (canonical):** [`docs/status/current-state.md`](../status/current-state.md) — **55** workspace members (**`rusvel-pipeline`** added), **295** Rust files under `crates/`, **~69,456** LOC, **141** `.route(` lines, **36** API modules beside `lib.rs`, **22** port traits in `ports.rs`.
+
+**Workspace growth vs. older docs:** The 2026-03-28 tree had **54** members (webhook, cron, channel, `dept-messaging`, etc.). The next jump was **`rusvel-pipeline`**; always use **`current-state.md` §1** for live planning.
 
 ---
 

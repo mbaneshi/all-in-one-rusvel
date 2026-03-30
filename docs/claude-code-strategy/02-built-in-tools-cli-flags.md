@@ -16,7 +16,7 @@ Claude Code tools serve RUSVEL in **two distinct ways**:
 
 ### Read — Cross-Crate Understanding
 
-**Challenge:** RUSVEL has **54** workspace members. Understanding a feature often requires reading 4-5 files across layers. Scale: [`docs/status/current-state.md`](../status/current-state.md).
+**Challenge:** RUSVEL has **55** workspace members. Understanding a feature often requires reading 4-5 files across layers. Scale: [`docs/status/current-state.md`](../status/current-state.md).
 
 **Pattern:** When working on a feature, read the full vertical slice:
 ```
@@ -63,7 +63,7 @@ Grep: "metadata:"                   → audit schema evolution fields
 **Core RUSVEL commands that Bash executes:**
 ```bash
 cargo build                          # Build all workspace members
-cargo test                           # Full suite from repo root (~635 tests summed; see current-state)
+cargo test                           # Full suite from repo root (~636 tests summed; see current-state)
 cargo test -p forge-engine           # Test single engine
 cargo run                            # Start API on :3000
 cargo run -- session create "demo"   # Test CLI
