@@ -209,6 +209,8 @@ export interface ChatConfig {
 	allowed_tools: string[];
 	disallowed_tools: string[];
 	max_turns: number | null;
+	/** Optional tier hint from API (`fast` | `balanced` | `premium`). */
+	model_tier?: string | null;
 }
 
 export interface ModelOption {

@@ -7,10 +7,21 @@
 		getGitHubConnectorStatus,
 		setGitHubPat,
 		clearGitHubPat,
-		type Job
+		getConfig,
+		updateConfig,
+		getModels,
+		getTools,
+		getDepartments,
+		type Job,
+		type ChatConfig,
+		type ModelOption,
+		type ToolOption,
+		type DepartmentDef
 	} from '$lib/api';
+	import { invalidate } from '$lib/cache';
 	import { refreshPendingApprovalCount } from '$lib/stores';
 	import { toast } from 'svelte-sonner';
+
 	let health = $state('checking...');
 	let version = $state('0.1.0');
 
@@ -22,6 +33,28 @@
 	let ghConnected = $state(false);
 	let ghPat = $state('');
 	let ghLoading = $state(true);
+
+	let appConfig = $state<ChatConfig | null>(null);
+	let models = $state<ModelOption[]>([]);
+	let tools = $state<ToolOption[]>([]);
+	let appConfigLoading = $state(true);
+	let appConfigSaving = $state(false);
+	let showToolToggles = $state(false);
+
+	let departments = $state<DepartmentDef[]>([]);
+	let deptsLoading = $state(true);
+
+	const effortLevels = ['low', 'medium', 'high', 'max'] as const;
+	const permissionOptions = [
+		{ value: 'default', label: 'Default (CLI / agent default)' },
+		{ value: 'plan', label: 'Plan' },
+		{ value: 'supervised', label: 'Supervised (confirm tools)' },
+		{ value: 'locked', label: 'Locked (no tools)' },
+		{ value: 'auto', label: 'Auto (agent policy)' }
+	];
+
+	let maxBudgetStr = $state('');
+	let maxTurnsStr = $state('');
 
 	async function check() {
 		try {
@@ -120,62 +153,388 @@
 		}
 	}
 
+	function syncBudgetTurnsFromConfig(c: ChatConfig) {
+		maxBudgetStr =
+			c.max_budget_usd != null && !Number.isNaN(c.max_budget_usd) ? String(c.max_budget_usd) : '';
+		maxTurnsStr = c.max_turns != null ? String(c.max_turns) : '';
+	}
+
+	async function loadAppConfig() {
+		appConfigLoading = true;
+		try {
+			const [cfg, mdls, tls, depts] = await Promise.all([
+				getConfig(),
+				getModels(),
+				getTools(),
+				getDepartments()
+			]);
+			appConfig = cfg;
+			syncBudgetTurnsFromConfig(cfg);
+			models = mdls;
+			tools = tls;
+			departments = depts;
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'Failed to load app settings');
+		} finally {
+			appConfigLoading = false;
+			deptsLoading = false;
+		}
+	}
+
+	async function saveAppDefaults() {
+		if (!appConfig) return;
+		const budget = maxBudgetStr.trim();
+		const turns = maxTurnsStr.trim();
+		const next: ChatConfig = {
+			...appConfig,
+			max_budget_usd: budget === '' ? null : Number.parseFloat(budget),
+			max_turns: turns === '' ? null : Number.parseInt(turns, 10)
+		};
+		if (next.max_budget_usd != null && Number.isNaN(next.max_budget_usd)) {
+			toast.error('Max budget must be a number');
+			return;
+		}
+		if (next.max_turns != null && Number.isNaN(next.max_turns)) {
+			toast.error('Max turns must be a number');
+			return;
+		}
+		appConfigSaving = true;
+		try {
+			appConfig = await updateConfig(next);
+			syncBudgetTurnsFromConfig(appConfig);
+			invalidate('global-config');
+			toast.success('App defaults saved');
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'Save failed');
+		} finally {
+			appConfigSaving = false;
+		}
+	}
+
+	function setModel(e: globalThis.Event) {
+		const v = (e.target as HTMLSelectElement).value;
+		if (appConfig) appConfig = { ...appConfig, model: v };
+	}
+
+	function setEffort(level: string) {
+		if (appConfig) appConfig = { ...appConfig, effort: level };
+	}
+
+	function setPermissionMode(e: globalThis.Event) {
+		const v = (e.target as HTMLSelectElement).value;
+		if (appConfig) appConfig = { ...appConfig, permission_mode: v };
+	}
+
+	function toggleTool(toolName: string) {
+		if (!appConfig) return;
+		const d = appConfig.disallowed_tools;
+		const idx = d.indexOf(toolName);
+		const disallowed =
+			idx >= 0 ? d.filter((t) => t !== toolName) : [...d, toolName];
+		appConfig = { ...appConfig, disallowed_tools: disallowed };
+	}
+
+	function toolEnabled(name: string): boolean {
+		return !appConfig?.disallowed_tools.includes(name);
+	}
+
+	let selectedModelHelp = $derived(
+		models.find((m) => m.value === appConfig?.model)?.description ?? ''
+	);
+
 	check();
 	loadApprovals();
 	loadGitHub();
+	loadAppConfig();
 </script>
 
 <div class="p-6">
-	<h1 class="mb-6 text-2xl font-bold text-gray-100">Settings</h1>
-
-	<p class="mb-4 text-sm text-gray-400">
+	<h1 class="mb-2 text-2xl font-bold text-foreground">Settings</h1>
+	<p class="mb-6 text-sm text-muted-foreground">
 		<a href="/settings/spend" class="text-primary hover:underline">LLM spend dashboard</a>
 	</p>
 
-	<div class="max-w-2xl space-y-6">
-		<!-- Approvals Section -->
-		<div class="rounded-xl border border-amber-800/50 bg-gray-900 p-5">
+	<div class="max-w-3xl space-y-6">
+		<!-- App defaults (global LLM) -->
+		<div class="rounded-xl border border-border bg-card p-5">
+			<h2 class="mb-1 text-sm font-semibold uppercase tracking-wider text-primary">
+				App defaults
+			</h2>
+			<p class="mb-4 text-xs text-muted-foreground leading-relaxed">
+				<code class="rounded bg-muted px-1">PUT /api/config</code> — default model and tool policy for
+				workspace flows that use global chat config. Each department can still override in
+				<strong>Dept → Config</strong> (model, chat mode, budget).
+			</p>
+
+			{#if appConfigLoading}
+				<p class="text-sm text-muted-foreground">Loading…</p>
+			{:else if !appConfig}
+				<p class="text-sm text-destructive">Could not load configuration.</p>
+			{:else}
+				<div class="space-y-4">
+					<div>
+						<label for="settings-model" class="mb-1 block text-xs font-medium text-muted-foreground"
+							>Model</label
+						>
+						<select
+							id="settings-model"
+							value={appConfig.model}
+							onchange={setModel}
+							class="w-full max-w-xl rounded-md border border-border bg-secondary px-3 py-2 text-sm text-foreground"
+						>
+							{#each models as m}
+								<option value={m.value} title={m.description}>{m.label}</option>
+							{/each}
+						</select>
+						{#if selectedModelHelp}
+							<p class="mt-1.5 text-xs text-muted-foreground leading-relaxed">{selectedModelHelp}</p>
+						{/if}
+					</div>
+
+					<div>
+						<span class="mb-1 block text-xs font-medium text-muted-foreground">Effort</span>
+						<div class="flex flex-wrap gap-1 rounded-md border border-border bg-secondary p-0.5 w-fit">
+							{#each effortLevels as level}
+								<button
+									type="button"
+									onclick={() => setEffort(level)}
+									class="rounded px-3 py-1.5 text-xs transition-colors {appConfig.effort === level
+										? 'bg-primary text-primary-foreground'
+										: 'text-muted-foreground hover:text-foreground'}"
+								>
+									{level}
+								</button>
+							{/each}
+						</div>
+					</div>
+
+					<div>
+						<label
+							for="settings-perm"
+							class="mb-1 block text-xs font-medium text-muted-foreground">Permission mode</label
+						>
+						<select
+							id="settings-perm"
+							value={appConfig.permission_mode}
+							onchange={setPermissionMode}
+							class="w-full max-w-xl rounded-md border border-border bg-secondary px-3 py-2 text-sm"
+						>
+							{#each permissionOptions as o}
+								<option value={o.value}>{o.label}</option>
+							{/each}
+						</select>
+					</div>
+
+					<div class="grid gap-3 sm:grid-cols-2">
+						<div>
+							<label
+								for="settings-budget"
+								class="mb-1 block text-xs font-medium text-muted-foreground"
+								>Max budget (USD)</label
+							>
+							<input
+								id="settings-budget"
+								type="text"
+								inputmode="decimal"
+								placeholder="optional"
+								bind:value={maxBudgetStr}
+								class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono"
+							/>
+						</div>
+						<div>
+							<label
+								for="settings-turns"
+								class="mb-1 block text-xs font-medium text-muted-foreground">Max turns</label
+							>
+							<input
+								id="settings-turns"
+								type="text"
+								inputmode="numeric"
+								placeholder="optional"
+								bind:value={maxTurnsStr}
+								class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono"
+							/>
+						</div>
+					</div>
+
+					<div>
+						<button
+							type="button"
+							onclick={() => (showToolToggles = !showToolToggles)}
+							class="mb-2 text-xs font-medium text-primary hover:underline"
+						>
+							{showToolToggles ? 'Hide' : 'Show'} tool allowlist (toggle disabled tools)
+						</button>
+						{#if showToolToggles}
+							<div class="flex flex-wrap gap-2 rounded-md border border-border bg-muted/20 p-3">
+								{#each tools as tool}
+									<button
+										type="button"
+										title={tool.description}
+										onclick={() => toggleTool(tool.name)}
+										class="rounded-lg border px-2.5 py-1 text-xs transition-colors {toolEnabled(tool.name)
+											? 'border-primary/50 bg-primary/10 text-foreground'
+											: 'border-border text-muted-foreground line-through opacity-60'}"
+									>
+										{tool.name}
+									</button>
+								{/each}
+							</div>
+						{/if}
+					</div>
+
+					<button
+						type="button"
+						disabled={appConfigSaving}
+						onclick={() => void saveAppDefaults()}
+						class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+					>
+						{appConfigSaving ? 'Saving…' : 'Save app defaults'}
+					</button>
+				</div>
+			{/if}
+		</div>
+
+		<!-- Departments directory -->
+		<div class="rounded-xl border border-border bg-card p-5">
+			<h2 class="mb-1 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+				Departments
+			</h2>
+			<p class="mb-4 text-xs text-muted-foreground">
+				Per-department: Config, Chat, Agents, Skills, Rules, Events, Engine, and extras (Pipeline,
+				CRM, …). Placeholder for future unified dept settings API.
+			</p>
+			{#if deptsLoading}
+				<p class="text-sm text-muted-foreground">Loading…</p>
+			{:else if departments.length === 0}
+				<p class="text-sm text-muted-foreground">No departments from API.</p>
+			{:else}
+				<ul class="divide-y divide-border rounded-md border border-border">
+					{#each departments as d (d.id)}
+						<li class="flex flex-col gap-2 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+							<div>
+								<p class="text-sm font-medium text-foreground">{d.title ?? d.name}</p>
+								<p class="text-xs text-muted-foreground font-mono">{d.id}</p>
+							</div>
+							<div class="flex flex-wrap gap-2">
+								<a
+									href="/dept/{encodeURIComponent(d.id)}/config"
+									class="rounded-md border border-border bg-secondary px-2 py-1 text-xs hover:bg-accent"
+									>Config</a
+								>
+								<a
+									href="/dept/{encodeURIComponent(d.id)}/chat"
+									class="rounded-md border border-border bg-secondary px-2 py-1 text-xs hover:bg-accent"
+									>Chat</a
+								>
+								<a
+									href="/dept/{encodeURIComponent(d.id)}/agents"
+									class="rounded-md border border-border bg-secondary px-2 py-1 text-xs hover:bg-accent"
+									>Agents</a
+								>
+								<a
+									href="/dept/{encodeURIComponent(d.id)}/skills"
+									class="rounded-md border border-border bg-secondary px-2 py-1 text-xs hover:bg-accent"
+									>Skills</a
+								>
+							</div>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</div>
+
+		<!-- Workspace entities (cross-cutting) -->
+		<div class="rounded-xl border border-border bg-card p-5">
+			<h2 class="mb-1 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+				Workspace entities
+			</h2>
+			<p class="mb-3 text-xs text-muted-foreground">
+				Global views; department-scoped lists also live under each dept (Agents, Skills, Rules, MCP,
+				Hooks, Flows).
+			</p>
+			<div class="flex flex-wrap gap-2">
+				<a
+					href="/chat"
+					class="rounded-md border border-dashed border-border px-3 py-1.5 text-xs hover:bg-muted/50"
+					>God chat</a
+				>
+				<a
+					href="/approvals"
+					class="rounded-md border border-dashed border-border px-3 py-1.5 text-xs hover:bg-muted/50"
+					>Approvals</a
+				>
+				<a
+					href="/artifacts"
+					class="rounded-md border border-dashed border-border px-3 py-1.5 text-xs hover:bg-muted/50"
+					>Artifacts</a
+				>
+				<a
+					href="/flows"
+					class="rounded-md border border-dashed border-border px-3 py-1.5 text-xs hover:bg-muted/50"
+					>Flows</a
+				>
+				<a
+					href="/knowledge"
+					class="rounded-md border border-dashed border-border px-3 py-1.5 text-xs hover:bg-muted/50"
+					>Knowledge</a
+				>
+				<a
+					href="/database/schema"
+					class="rounded-md border border-dashed border-border px-3 py-1.5 text-xs hover:bg-muted/50"
+					>Database</a
+				>
+				<a
+					href="/tasks"
+					class="rounded-md border border-dashed border-border px-3 py-1.5 text-xs hover:bg-muted/50"
+					>Tasks</a
+				>
+			</div>
+		</div>
+
+		<!-- Approvals -->
+		<div class="rounded-xl border border-amber-800/50 bg-card p-5">
 			<div class="mb-4 flex items-center justify-between">
-				<h3 class="text-sm font-semibold uppercase tracking-wider text-amber-400">
+				<h3 class="text-sm font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
 					Pending Approvals
 				</h3>
 				<button
 					onclick={loadApprovals}
-					class="rounded px-2 py-1 text-xs text-gray-400 transition hover:bg-gray-800 hover:text-gray-200"
+					class="rounded px-2 py-1 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
 				>
 					Refresh
 				</button>
 			</div>
 
 			{#if approvalsLoading}
-				<p class="text-sm text-gray-500">Loading...</p>
+				<p class="text-sm text-muted-foreground">Loading...</p>
 			{:else if approvalsError}
-				<p class="text-sm text-red-400">{approvalsError}</p>
+				<p class="text-sm text-destructive">{approvalsError}</p>
 			{:else if pendingJobs.length === 0}
-				<p class="text-sm text-gray-500">No jobs awaiting approval.</p>
+				<p class="text-sm text-muted-foreground">No jobs awaiting approval.</p>
 			{:else}
 				<div class="space-y-3">
 					{#each pendingJobs as job (job.id)}
-						<div class="rounded-lg border border-gray-700 bg-gray-800/50 p-3">
+						<div class="rounded-lg border border-border bg-muted/20 p-3">
 							<div class="mb-2 flex items-start justify-between">
 								<div>
 									<span
-										class="inline-block rounded bg-amber-900/50 px-2 py-0.5 text-xs font-medium text-amber-300"
+										class="inline-block rounded bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300"
 									>
 										{formatKind(job.kind)}
 									</span>
-									<span class="ml-2 text-xs text-gray-500" title={job.id}>
+									<span class="ml-2 text-xs text-muted-foreground" title={job.id}>
 										{job.id.slice(0, 8)}...
 									</span>
 								</div>
-								<span class="text-xs text-gray-500">
+								<span class="text-xs text-muted-foreground">
 									retries: {job.retries}/{job.max_retries}
 								</span>
 							</div>
 
 							{#if job.payload && typeof job.payload === 'object'}
 								<pre
-									class="mb-3 max-h-24 overflow-auto rounded bg-gray-900 p-2 text-xs text-gray-400">{JSON.stringify(
+									class="mb-3 max-h-24 overflow-auto rounded bg-background p-2 text-xs text-muted-foreground">{JSON.stringify(
 										job.payload,
 										null,
 										2
@@ -204,56 +563,57 @@
 			{/if}
 		</div>
 
-		<div class="rounded-xl border border-gray-800 bg-gray-900 p-5">
-			<h3 class="mb-4 text-sm font-semibold uppercase tracking-wider text-gray-400">System</h3>
-			<div class="space-y-3">
-				<div class="flex items-center justify-between">
-					<span class="text-sm text-gray-400">Version</span>
-					<span class="text-sm text-gray-200">{version}</span>
+		<div class="rounded-xl border border-border bg-card p-5">
+			<h3 class="mb-4 text-sm font-semibold uppercase tracking-wider text-muted-foreground">System</h3>
+			<div class="space-y-3 text-sm">
+				<div class="flex flex-wrap items-center justify-between gap-2">
+					<span class="text-muted-foreground">Version</span>
+					<span class="text-foreground">{version}</span>
 				</div>
-				<div class="flex items-center justify-between">
-					<span class="text-sm text-gray-400">API Status</span>
-					<span class="text-sm {health === 'Connected' ? 'text-green-400' : 'text-red-400'}"
-						>{health}</span
-					>
+				<div class="flex flex-wrap items-center justify-between gap-2">
+					<span class="text-muted-foreground">API status</span>
+					<span class={health === 'Connected' ? 'text-green-500' : 'text-destructive'}>{health}</span>
 				</div>
-				<div class="flex items-center justify-between">
-					<span class="text-sm text-gray-400">LLM backends</span>
-					<span class="text-right text-xs text-gray-300"
-						>ANTHROPIC_API_KEY → HTTP; else Claude CLI. OPENAI_KEY / Ollama registered at boot.</span
-					>
+				<div class="border-t border-border pt-3">
+					<p class="text-xs text-muted-foreground leading-relaxed">
+						LLM routing is chosen at <strong>server boot</strong> from env (e.g.
+						<code class="rounded bg-muted px-1">ANTHROPIC_API_KEY</code>,
+						<code class="rounded bg-muted px-1">OPENAI_API_KEY</code>, Ollama). Use
+						<strong>App defaults</strong> above to pick which registered model id to call (e.g.
+						<code class="rounded bg-muted px-1">ollama/…</code> to avoid paid APIs).
+					</p>
 				</div>
-				<div class="flex items-center justify-between">
-					<span class="text-sm text-gray-400">Database</span>
-					<span class="text-sm text-gray-200">SQLite WAL (~/.rusvel/rusvel.db)</span>
+				<div class="flex flex-wrap items-center justify-between gap-2">
+					<span class="text-muted-foreground">Database</span>
+					<span class="text-right text-foreground">SQLite WAL (~/.rusvel/rusvel.db)</span>
 				</div>
 			</div>
 		</div>
 
-		<div class="rounded-xl border border-gray-800 bg-gray-900 p-5">
-			<h3 class="mb-2 text-sm font-semibold uppercase tracking-wider text-gray-400">
+		<div class="rounded-xl border border-border bg-card p-5">
+			<h3 class="mb-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
 				GitHub connector
 			</h3>
-			<p class="mb-3 text-xs text-gray-500">
-				Personal access token (stored on the Rusvel server). Injects context hints into department chat
-				when set. Use fine-scoped PATs.
+			<p class="mb-3 text-xs text-muted-foreground">
+				Personal access token (stored on the Rusvel server). Injects context hints into department
+				chat when set. Use fine-scoped PATs.
 			</p>
 			{#if ghLoading}
-				<p class="text-sm text-gray-500">Loading…</p>
+				<p class="text-sm text-muted-foreground">Loading…</p>
 			{:else}
-				<p class="mb-2 text-sm text-gray-300">
+				<p class="mb-2 text-sm text-foreground">
 					Status: {ghConnected ? 'Connected' : 'Not connected'}
 				</p>
 				<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
 					<input
 						type="password"
-						class="flex-1 rounded border border-gray-700 bg-gray-950 px-3 py-2 font-mono text-xs text-gray-200"
+						class="flex-1 rounded border border-border bg-background px-3 py-2 font-mono text-xs"
 						placeholder="ghp_…"
 						bind:value={ghPat}
 					/>
 					<button
 						type="button"
-						class="rounded bg-blue-800 px-3 py-2 text-xs text-white hover:bg-blue-700"
+						class="rounded bg-primary px-3 py-2 text-xs text-primary-foreground hover:bg-primary/90"
 						onclick={() => saveGitHubPat()}
 					>
 						Save token
@@ -261,7 +621,7 @@
 					{#if ghConnected}
 						<button
 							type="button"
-							class="rounded border border-gray-600 px-3 py-2 text-xs text-gray-300 hover:bg-gray-800"
+							class="rounded border border-border px-3 py-2 text-xs hover:bg-muted"
 							onclick={() => removeGitHubPat()}
 						>
 							Remove
@@ -269,27 +629,6 @@
 					{/if}
 				</div>
 			{/if}
-		</div>
-
-		<div class="rounded-xl border border-gray-800 bg-gray-900 p-5">
-			<h3 class="mb-4 text-sm font-semibold uppercase tracking-wider text-gray-400">Engines</h3>
-			<div class="space-y-2">
-				{#each [{ name: 'Forge', tests: 15, status: 'Active' }, { name: 'Code', tests: 6, status: 'Built' }, { name: 'Harvest', tests: 12, status: 'Built' }, { name: 'Content', tests: 7, status: 'Built' }, { name: 'GoToMarket', tests: 5, status: 'Built' }] as engine}
-					<div class="flex items-center justify-between rounded-lg bg-gray-800/50 px-3 py-2">
-						<span class="text-sm text-gray-200">{engine.name}</span>
-						<div class="flex items-center gap-3">
-							<span class="text-xs text-gray-500">{engine.tests} tests</span>
-							<span
-								class="rounded-full px-2 py-0.5 text-xs {engine.status === 'Active'
-									? 'bg-green-900/50 text-green-300'
-									: 'bg-gray-700 text-gray-400'}"
-							>
-								{engine.status}
-							</span>
-						</div>
-					</div>
-				{/each}
-			</div>
 		</div>
 	</div>
 </div>
