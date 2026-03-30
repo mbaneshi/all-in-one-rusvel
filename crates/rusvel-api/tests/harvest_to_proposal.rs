@@ -336,6 +336,7 @@ async fn test_router() -> (
         claude_transport_cli: rusvel_llm::claude_transport_is_cli(),
         operator_prefs: rusvel_api::operator_runtime::OperatorRuntimePrefs::default(),
         shutdown_tx: None,
+        reexec_pending: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     };
 
     (

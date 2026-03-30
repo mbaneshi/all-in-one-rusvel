@@ -330,6 +330,7 @@ async fn build_harness_with_auth_and_gtm(
         claude_transport_cli: claude_transport_is_cli(),
         operator_prefs: OperatorRuntimePrefs::default(),
         shutdown_tx: None,
+        reexec_pending: Arc::new(std::sync::atomic::AtomicBool::new(false)),
     };
 
     let router = build_router(state);

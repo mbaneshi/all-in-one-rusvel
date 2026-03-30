@@ -25,4 +25,8 @@ async fn get_system_runtime_has_expected_shape() {
     assert!(v.get("health").is_some());
     assert!(v.get("capabilities").is_some());
     assert!(v["capabilities"].is_array());
+    assert!(v.get("reexec").is_some());
+    assert!(v["reexec"].get("env_enabled").is_some());
+    assert!(v["reexec"].get("platform_unix").is_some());
+    assert!(v["reexec"].get("available").is_some());
 }

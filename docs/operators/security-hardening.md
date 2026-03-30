@@ -28,6 +28,11 @@ If **both** token env vars are unset, `/api/*` accepts requests without `Authori
 | `/api/system/runtime` | GET | Admin or read token | In-process effective configuration (no secret values): process/HTTP summary, LLM wiring snapshot, integration booleans, subsystem registration, boot-time operator prefs, and a small **capabilities** list (labels + doc paths). |
 | `/api/system/operator-prefs` | PUT | Admin only | Persist operator preferences (e.g. `force_claude_cli`) in object store. Changes apply after a **full process restart**; the running LLM stack is not hot-reloaded. |
 | `/api/system/shutdown` | POST | Admin only | Triggers graceful shutdown (same signal path as Ctrl+C). Use with **systemd**, **Docker** restart policy, **launchd**, or a manual terminal restart. |
+| `/api/system/reexec` | POST | Admin only | Graceful shutdown, then **Unix** `exec` the same executable with the same arguments (so operator prefs / env apply at next boot). Requires **`RUSVEL_ALLOW_REEXEC=1`** (or `true` / `yes` / `on`) in the server environment when the process **starts**. Can misbehave under `cargo run`; prefer a supervisor or **Stop server** + manual start when unsure. |
+
+| Variable | Purpose |
+|----------|---------|
+| `RUSVEL_ALLOW_REEXEC` | When set at process start on a Unix host, enables `POST /api/system/reexec` and the composition-root hook that runs `exec` after the HTTP server stops. |
 
 Settings UI: **Control center** at `/settings/control` (tab under Settings).
 

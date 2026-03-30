@@ -3,6 +3,7 @@
 		getSystemRuntime,
 		updateOperatorPrefs,
 		postShutdown,
+		postReexec,
 		checkHealth,
 		type SystemRuntimeResponse
 	} from '$lib/api';
@@ -14,6 +15,8 @@
 	let prefsSaving = $state(false);
 	let shutdownOpen = $state(false);
 	let shutdownBusy = $state(false);
+	let reexecOpen = $state(false);
+	let reexecBusy = $state(false);
 
 	/** UI mode for operator pref; maps to `force_claude_cli` on save */
 	let prefMode = $state<'env' | 'cli' | 'api'>('env');
@@ -73,6 +76,19 @@
 			toast.error(e instanceof Error ? e.message : 'Shutdown request failed');
 		} finally {
 			shutdownBusy = false;
+		}
+	}
+
+	async function confirmReexec() {
+		reexecBusy = true;
+		try {
+			const res = await postReexec();
+			toast.message(res.message, { duration: 10000 });
+			reexecOpen = false;
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : 'Re-exec request failed');
+		} finally {
+			reexecBusy = false;
 		}
 	}
 
@@ -300,6 +316,42 @@
 			</ul>
 		</div>
 
+		<div class="rounded-xl border border-amber-500/35 bg-amber-500/5 p-5">
+			<h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-amber-800 dark:text-amber-200">
+				Restart same process (re-exec)
+			</h3>
+			<p class="mb-3 text-xs text-muted-foreground leading-relaxed">
+				Graceful shutdown, then replace this process with the same executable and arguments so operator prefs
+				and env are picked up at boot. Enable
+				<code class="rounded bg-muted px-0.5 font-mono text-[10px]">RUSVEL_ALLOW_REEXEC=1</code>
+				on the server before starting Rusvel (Unix only). Can misbehave under
+				<code class="rounded bg-muted px-0.5 font-mono text-[10px]">cargo run</code>; use Stop server + manual
+				start or a process manager if unsure.
+			</p>
+			<dl class="mb-3 grid gap-2 text-xs sm:grid-cols-3">
+				<div>
+					<dt class="text-muted-foreground">Env flag</dt>
+					<dd class="font-medium text-foreground">{runtime.reexec.env_enabled ? 'on' : 'off'}</dd>
+				</div>
+				<div>
+					<dt class="text-muted-foreground">Unix host</dt>
+					<dd class="font-medium text-foreground">{runtime.reexec.platform_unix ? 'yes' : 'no'}</dd>
+				</div>
+				<div>
+					<dt class="text-muted-foreground">Re-exec offered</dt>
+					<dd class="font-medium text-foreground">{runtime.reexec.available ? 'yes' : 'no'}</dd>
+				</div>
+			</dl>
+			<button
+				type="button"
+				disabled={!runtime.reexec.available || reexecBusy}
+				onclick={() => (reexecOpen = true)}
+				class="rounded-md border border-amber-600/50 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-900 dark:text-amber-100 hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+			>
+				Re-exec process…
+			</button>
+		</div>
+
 		<div class="rounded-xl border border-destructive/40 bg-destructive/5 p-5">
 			<h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-destructive">Stop server</h3>
 			<p class="mb-3 text-xs text-muted-foreground leading-relaxed">
@@ -354,10 +406,54 @@
 			</div>
 		{/if}
 
+		{#if reexecOpen}
+			<div
+				class="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm"
+				role="presentation"
+				onclick={(e) => e.target === e.currentTarget && !reexecBusy && (reexecOpen = false)}
+			>
+				<div
+					class="max-w-md rounded-xl border border-border bg-card p-5 shadow-lg"
+					role="dialog"
+					aria-modal="true"
+					aria-labelledby="reexec-title"
+				>
+					<h4 id="reexec-title" class="text-sm font-semibold text-foreground">Re-exec Rusvel?</h4>
+					<p class="mt-2 text-xs text-muted-foreground leading-relaxed">
+						The HTTP server will shut down and this process will be replaced with the same argv. Save
+						operator prefs first if needed. You need
+						<code class="rounded bg-muted px-0.5">RUSVEL_ALLOW_REEXEC=1</code> and an admin API token when
+						auth is enabled.
+					</p>
+					<div class="mt-4 flex justify-end gap-2">
+						<button
+							type="button"
+							disabled={reexecBusy}
+							onclick={() => (reexecOpen = false)}
+							class="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted disabled:opacity-50"
+						>
+							Cancel
+						</button>
+						<button
+							type="button"
+							disabled={reexecBusy}
+							onclick={() => void confirmReexec()}
+							class="rounded-md bg-amber-700 px-3 py-1.5 text-xs text-white hover:bg-amber-600 disabled:opacity-50 dark:bg-amber-800"
+						>
+							{reexecBusy ? 'Starting…' : 'Confirm re-exec'}
+						</button>
+					</div>
+				</div>
+			</div>
+		{/if}
+
 		<p class="text-[11px] text-muted-foreground leading-relaxed">
 			{runtime.notes.restart ?? ''}
 			{#if runtime.notes.shutdown}
 				<span class="mt-1 block">{runtime.notes.shutdown}</span>
+			{/if}
+			{#if runtime.notes.reexec}
+				<span class="mt-1 block">{runtime.notes.reexec}</span>
 			{/if}
 		</p>
 	{/if}

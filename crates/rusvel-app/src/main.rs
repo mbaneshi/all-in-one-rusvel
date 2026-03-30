@@ -18,6 +18,7 @@ use std::io::IsTerminal;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 use anyhow::Result;
@@ -207,6 +208,90 @@ async fn load_event_triggers_from_store(
     Ok(())
 }
 
+const SESSION_JOB_LOG_WINDOW: &str = "session-job-log";
+
+async fn ensure_session_job_log_pane(
+    term: &Arc<dyn rusvel_core::ports::TerminalPort>,
+    session_id: &SessionId,
+) -> Option<rusvel_core::id::PaneId> {
+    use rusvel_core::terminal::{PaneSize, PaneSource, WindowSource};
+    use std::path::PathBuf;
+
+    let Ok(panes) = term.list_panes_for_session(session_id).await else {
+        return None;
+    };
+    if let Some(p) = panes
+        .iter()
+        .find(|p| matches!(&p.source, PaneSource::SessionLog))
+    {
+        return Some(p.id);
+    }
+
+    let window_id = match term
+        .create_window(session_id, SESSION_JOB_LOG_WINDOW, WindowSource::Manual)
+        .await
+    {
+        Ok(id) => id,
+        Err(e) => {
+            tracing::debug!(error = %e, "ensure_session_job_log_pane: create_window");
+            return None;
+        }
+    };
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
+    match term
+        .create_pane(
+            &window_id,
+            "sleep 86400",
+            &cwd,
+            PaneSize { rows: 24, cols: 80 },
+            PaneSource::SessionLog,
+            None,
+        )
+        .await
+    {
+        Ok(id) => Some(id),
+        Err(e) => {
+            tracing::debug!(error = %e, "ensure_session_job_log_pane: create_pane");
+            None
+        }
+    }
+}
+
+async fn pane_scrollback_snippet_for_approval(
+    terminal: &Arc<dyn rusvel_core::ports::TerminalPort>,
+    pane_id: &rusvel_core::id::PaneId,
+) -> String {
+    const MAX_BYTES: usize = 8192;
+    const MAX_LINES: usize = 28;
+    const MAX_CHARS: usize = 4000;
+
+    let Ok(buf) = terminal.pane_scrollback(pane_id).await else {
+        return String::new();
+    };
+    if buf.is_empty() {
+        return String::new();
+    }
+    let start = buf.len().saturating_sub(MAX_BYTES);
+    let chunk = &buf[start..];
+    let s = String::from_utf8_lossy(chunk);
+    let lines: Vec<&str> = s.lines().collect();
+    let n = lines.len().min(MAX_LINES);
+    let lo = lines.len().saturating_sub(n);
+    let mut out = lines[lo..].join("\n");
+    if out.chars().count() > MAX_CHARS {
+        out = out
+            .chars()
+            .rev()
+            .take(MAX_CHARS)
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect();
+        out.insert_str(0, "…");
+    }
+    out
+}
+
 async fn stamp_job_approval_terminal_links(
     storage: &Arc<dyn StoragePort>,
     terminal: &Arc<dyn rusvel_core::ports::TerminalPort>,
@@ -242,6 +327,14 @@ async fn stamp_job_approval_terminal_links(
         serde_json::json!(p.window_id.to_string()),
     );
     m.insert("terminal_dept_id".into(), serde_json::json!(dept_id));
+
+    let snippet = pane_scrollback_snippet_for_approval(terminal, &p.id).await;
+    if !snippet.trim().is_empty() {
+        m.insert(
+            "terminal_context_snippet".into(),
+            serde_json::json!(snippet),
+        );
+    }
     let _ = storage.jobs().update(&job).await;
 }
 
@@ -884,6 +977,7 @@ async fn main() -> Result<()> {
     // 4. Concrete adapters
     let db: Arc<Database> = Arc::new(Database::open(data_dir.join("rusvel.db"))?);
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    let reexec_pending = Arc::new(AtomicBool::new(false));
     let storage_for_boot: Arc<dyn rusvel_core::ports::StoragePort> = db.clone();
     let operator_prefs = rusvel_api::operator_runtime::load_operator_prefs(&storage_for_boot).await;
     let (llm_multi, claude_transport_cli) = llm_bootstrap::compose_llm_multi(&operator_prefs);
@@ -1648,17 +1742,29 @@ async fn main() -> Result<()> {
                                     job_id,
                                     kind_str.replace(' ', "")
                                 );
-                                if let Ok(panes) = term.list_panes_for_session(&sid).await {
-                                    if let Some(p) = panes.iter().find(|p| {
-                                        matches!(
-                                            &p.source,
-                                            rusvel_core::terminal::PaneSource::Shell
-                                                | rusvel_core::terminal::PaneSource::Department(_)
-                                        )
-                                    }) {
-                                        let msg = format!("\r\n\x1b[36m[rusvel:job]\x1b[0m {line}\r\n");
-                                        let _ = term.inject_pane_output(&p.id, msg.as_bytes()).await;
-                                    }
+                                let msg = format!("\r\n\x1b[36m[rusvel:job]\x1b[0m {line}\r\n");
+                                let target = if let Some(pid) =
+                                    ensure_session_job_log_pane(term, &sid).await
+                                {
+                                    Some(pid)
+                                } else if let Ok(panes) = term.list_panes_for_session(&sid).await {
+                                    panes
+                                        .iter()
+                                        .find(|p| {
+                                            matches!(
+                                                &p.source,
+                                                rusvel_core::terminal::PaneSource::Shell
+                                                    | rusvel_core::terminal::PaneSource::Department(
+                                                        _
+                                                    )
+                                            )
+                                        })
+                                        .map(|p| p.id)
+                                } else {
+                                    None
+                                };
+                                if let Some(pid) = target {
+                                    let _ = term.inject_pane_output(&pid, msg.as_bytes()).await;
                                 }
                             }
                             if let Err(e) = job_port.complete(&job_id, job_result).await {
@@ -1933,6 +2039,7 @@ async fn main() -> Result<()> {
             claude_transport_cli,
             operator_prefs: operator_prefs.clone(),
             shutdown_tx: Some(shutdown_tx.clone()),
+            reexec_pending: reexec_pending.clone(),
         };
 
         let frontend_dir = [
@@ -1985,6 +2092,7 @@ async fn main() -> Result<()> {
         });
 
         server.await.map_err(|e| anyhow::anyhow!("{e}"))?;
+        rusvel_api::operator_runtime::run_reexec_if_pending(&reexec_pending);
     } else {
         // Default: start the API web server with graceful shutdown
         // Use registry generated by department boot (ADR-014)
@@ -2080,6 +2188,7 @@ async fn main() -> Result<()> {
             claude_transport_cli,
             operator_prefs: operator_prefs.clone(),
             shutdown_tx: Some(shutdown_tx.clone()),
+            reexec_pending: reexec_pending.clone(),
         };
 
         // Look for frontend build in known locations (filesystem first)
@@ -2128,6 +2237,7 @@ async fn main() -> Result<()> {
         });
 
         server.await.map_err(|e| anyhow::anyhow!("{e}"))?;
+        rusvel_api::operator_runtime::run_reexec_if_pending(&reexec_pending);
     }
 
     Ok(())
