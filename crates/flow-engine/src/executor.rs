@@ -285,7 +285,7 @@ pub async fn execute_flow_with_config(
                 .await
             {
                 let header = format!(
-                    "\r\n\x1b[1;36m── {} ({}) ──\x1b[0m\r\n",
+                    "\r\n\x1b[1;36m[rusvel:flow]\x1b[0m {} ({}) — start\r\n",
                     node_def.name, node_def.node_type
                 );
                 let _ = ts
@@ -323,8 +323,11 @@ pub async fn execute_flow_with_config(
                         .terminal
                         .inject_pane_output(
                             pid,
-                            format!("── finished: ok ({:?}) ──\r\n", FlowNodeStatus::Succeeded)
-                                .as_bytes(),
+                            format!(
+                                "\x1b[1;36m[rusvel:flow]\x1b[0m finished: ok ({:?})\r\n",
+                                FlowNodeStatus::Succeeded
+                            )
+                            .as_bytes(),
                         )
                         .await;
                 }
@@ -364,7 +367,11 @@ pub async fn execute_flow_with_config(
                         .terminal
                         .inject_pane_output(
                             pid,
-                            format!("── finished: {:?} ──\r\n", FlowNodeStatus::Failed).as_bytes(),
+                            format!(
+                                "\x1b[1;36m[rusvel:flow]\x1b[0m finished: {:?}\r\n",
+                                FlowNodeStatus::Failed
+                            )
+                            .as_bytes(),
                         )
                         .await;
                 }

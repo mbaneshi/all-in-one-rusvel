@@ -75,7 +75,7 @@ export const deptShellNavItems: { id: string; label: string; pathSegment: string
 	{ id: 'engine', label: 'Engine', pathSegment: 'engine' },
 	{ id: 'terminal', label: 'Terminal', pathSegment: 'terminal' },
 	{ id: 'agents', label: 'Agents', pathSegment: 'agents' },
-	{ id: 'workflows', label: 'Flows', pathSegment: 'workflows' },
+	{ id: 'workflows', label: 'Agent chains', pathSegment: 'workflows' },
 	{ id: 'skills', label: 'Skills', pathSegment: 'skills' },
 	{ id: 'rules', label: 'Rules', pathSegment: 'rules' },
 	{ id: 'mcp', label: 'MCP', pathSegment: 'mcp' },

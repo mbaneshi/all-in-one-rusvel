@@ -1688,6 +1688,72 @@ export async function getFlowExecutionPanes(
 	return request(`/api/flows/${flowId}/executions/${executionId}/panes`);
 }
 
+// ── Automations hub (native automation plane) ─────────────────
+
+/** Cron list row (`GET /api/cron`) — summary without full payload. */
+export interface CronScheduleSummary {
+	id: string;
+	name: string;
+	session_id: string;
+	schedule: string;
+	enabled: boolean;
+	event_kind: string;
+	created_at?: string;
+	last_fired_at?: string | null;
+}
+
+export async function getCronSchedulesList(): Promise<CronScheduleSummary[]> {
+	const v = await request<unknown>('/api/cron');
+	return Array.isArray(v) ? (v as CronScheduleSummary[]) : [];
+}
+
+export interface PlaybookListItem {
+	id: string;
+	name: string;
+	description: string;
+	category: string;
+	steps?: unknown[];
+}
+
+export async function getPlaybooksList(): Promise<PlaybookListItem[]> {
+	return request('/api/playbooks');
+}
+
+export interface PlaybookRunListItem {
+	id: string;
+	playbook_id: string;
+	status: string;
+	started_at?: string;
+	completed_at?: string | null;
+	error?: string | null;
+}
+
+export async function getPlaybookRunsList(): Promise<PlaybookRunListItem[]> {
+	return request('/api/playbooks/runs');
+}
+
+export interface SecretListItem {
+	key: string;
+	label?: string | null;
+	provider: string;
+}
+
+export async function listAutomationSecrets(): Promise<SecretListItem[]> {
+	return request('/api/secrets');
+}
+
+export interface WebhookListItem {
+	id: string;
+	name: string;
+	event_kind: string;
+}
+
+export async function getWebhooksList(): Promise<WebhookListItem[]> {
+	const v = await request<unknown>('/api/webhooks');
+	if (!Array.isArray(v)) return [];
+	return v as WebhookListItem[];
+}
+
 // ── Visual Testing ────────────────────────────────────────────
 
 export interface VisualIssue {

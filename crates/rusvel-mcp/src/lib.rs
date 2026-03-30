@@ -195,6 +195,25 @@ fn tool_definitions() -> serde_json::Value {
             }
         },
         {
+            "name": "automation_upsert_cron_schedule",
+            "description": "Create or update a cron schedule with event_kind rusvel.automation.v1 and payload = AutomationTriggerPayload (same as POST /api/cron). Omit schedule_id to create; set schedule_id to update. Requires app state (HTTP API).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "schedule_id": { "type": "string", "description": "Existing cron id for update; omit to create" },
+                    "name": { "type": "string" },
+                    "session_id": { "type": "string" },
+                    "schedule": { "type": "string", "description": "Preset hourly|daily|weekly or cron expression" },
+                    "action": { "type": "string", "enum": ["run_flow", "run_playbook"] },
+                    "target_id": { "type": "string", "description": "Flow UUID or playbook id" },
+                    "variables": { "type": "object" },
+                    "department_id": { "type": "string" },
+                    "enabled": { "type": "boolean", "default": true }
+                },
+                "required": ["name", "session_id", "schedule", "action", "target_id"]
+            }
+        },
+        {
             "name": "visual_inspect",
             "description": "Run visual regression tests on the frontend and return results. Captures screenshots of all routes and compares against baselines.",
             "inputSchema": {
@@ -363,6 +382,69 @@ impl RusvelMcp {
                 let out = rusvel_api::automation::dispatch_automation_trigger(app, sid, trigger)
                     .await
                     .map_err(|e| McpError::Engine(RusvelError::Validation(e)))?;
+                serde_json::to_value(out).map_err(McpError::Json)?
+            }
+            "automation_upsert_cron_schedule" => {
+                let app = rusvel_api::automation::worker_app_state().ok_or_else(|| {
+                    McpError::InvalidParams(
+                        "automation tools need app state (HTTP API or MCP HTTP)".into(),
+                    )
+                })?;
+                let sid = parse_session_id(args)?;
+                let name = args["name"]
+                    .as_str()
+                    .ok_or_else(|| McpError::InvalidParams("name required".into()))?
+                    .to_string();
+                let schedule = args["schedule"]
+                    .as_str()
+                    .ok_or_else(|| McpError::InvalidParams("schedule required".into()))?
+                    .to_string();
+                let action_str = args["action"]
+                    .as_str()
+                    .ok_or_else(|| McpError::InvalidParams("action required".into()))?;
+                let action = match action_str {
+                    "run_flow" => AutomationTriggerAction::RunFlow,
+                    "run_playbook" => AutomationTriggerAction::RunPlaybook,
+                    _ => {
+                        return Err(McpError::InvalidParams(
+                            "action must be run_flow or run_playbook".into(),
+                        ));
+                    }
+                };
+                let target_id = args["target_id"]
+                    .as_str()
+                    .ok_or_else(|| McpError::InvalidParams("target_id required".into()))?
+                    .to_string();
+                let vars = args
+                    .get("variables")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
+                let department_id = args
+                    .get("department_id")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let enabled = args["enabled"].as_bool().unwrap_or(true);
+                let schedule_id = args
+                    .get("schedule_id")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let trigger = AutomationTriggerPayload {
+                    version: 1,
+                    action,
+                    target_id,
+                    variables: vars,
+                    department_id,
+                };
+                let out = rusvel_api::automation::upsert_automation_cron_schedule(
+                    app,
+                    schedule_id,
+                    name,
+                    sid,
+                    schedule,
+                    trigger,
+                    enabled,
+                )
+                .await?;
                 serde_json::to_value(out).map_err(McpError::Json)?
             }
             "visual_inspect" => {

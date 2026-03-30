@@ -377,7 +377,7 @@ async fn run_step(
                     prompt = format!("--- Rules context ---\n{re}\n---\n{prompt}");
                 }
             }
-            let mut args = json!({
+            let args = json!({
                 "prompt": prompt,
                 "tools": Vec::<String>::new() as Vec<String>,
             });

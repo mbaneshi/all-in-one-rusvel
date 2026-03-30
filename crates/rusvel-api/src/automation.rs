@@ -24,6 +24,7 @@ pub fn worker_app_state() -> Option<Arc<AppState>> {
 use rusvel_core::domain::{
     AutomationTriggerAction, AutomationTriggerPayload, AUTOMATION_CRON_EVENT_KIND,
 };
+use rusvel_core::error::RusvelError;
 
 /// [`JobKind::Custom`] payload carries `trigger`: [`AutomationTriggerPayload`].
 pub const AUTOMATION_DISPATCH_JOB_KIND: &str = "rusvel.automation.dispatch";
@@ -52,7 +53,7 @@ pub fn parse_automation_trigger_from_cron(
 /// Run flow or playbook; used by job worker and optionally MCP/HTTP helpers.
 pub async fn dispatch_automation_trigger(
     state: Arc<AppState>,
-    session_id: SessionId,
+    _session_id: SessionId,
     trigger: AutomationTriggerPayload,
 ) -> Result<Value, String> {
     match trigger.action {
@@ -88,4 +89,45 @@ pub async fn dispatch_automation_trigger(
             Ok(json!({ "run_id": run_id, "playbook_id": trigger.target_id }))
         }
     }
+}
+
+/// Create or update a cron row that fires [`AUTOMATION_CRON_EVENT_KIND`] with `payload` = [`AutomationTriggerPayload`].
+pub async fn upsert_automation_cron_schedule(
+    state: Arc<AppState>,
+    schedule_id: Option<String>,
+    name: String,
+    session_id: SessionId,
+    schedule: String,
+    trigger: AutomationTriggerPayload,
+    enabled: bool,
+) -> Result<Value, RusvelError> {
+    let payload = serde_json::to_value(&trigger)
+        .map_err(|e| RusvelError::Serialization(e.to_string()))?;
+    if let Some(id) = schedule_id.filter(|s| !s.trim().is_empty()) {
+        let updated = state
+            .cron_scheduler
+            .update(
+                id.trim(),
+                Some(name),
+                Some(schedule),
+                Some(enabled),
+                Some(payload),
+                Some(AUTOMATION_CRON_EVENT_KIND.to_string()),
+            )
+            .await?;
+        return serde_json::to_value(&updated)
+            .map_err(|e| RusvelError::Serialization(e.to_string()));
+    }
+    let created = state
+        .cron_scheduler
+        .create(
+            name,
+            session_id,
+            schedule,
+            payload,
+            AUTOMATION_CRON_EVENT_KIND.to_string(),
+            enabled,
+        )
+        .await?;
+    serde_json::to_value(&created).map_err(|e| RusvelError::Serialization(e.to_string()))
 }

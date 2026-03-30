@@ -13,6 +13,7 @@
 		ClipboardList,
 		FileStack,
 		TerminalSquare,
+		Zap,
 		PanelLeftClose,
 		PanelLeftOpen,
 		ChevronDown,
@@ -54,6 +55,7 @@
 		{ href: '/artifacts', label: 'Artifacts', icon: FileStack, tour: '' },
 		{ href: '/approvals', label: 'Approvals', icon: ClipboardCheck, tour: '' },
 		{ href: '/database/schema', label: 'Database', icon: Database, tour: '' },
+		{ href: '/automations', label: 'Automations', icon: Zap, tour: '' },
 		{ href: '/flows', label: 'Flows', icon: GitBranch, tour: '' },
 		{ href: '/terminal', label: 'Terminal', icon: TerminalSquare, tour: '' }
 	] as const;
