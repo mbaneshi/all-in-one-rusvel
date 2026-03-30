@@ -5,6 +5,11 @@
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `RUSVEL_HTTP_ADDR` | `127.0.0.1:3000` | Socket address for the Axum server (e.g. `0.0.0.0:3000` for all interfaces). |
+| `RUSVEL_CORS_ORIGINS` | (unset → `http://localhost:5173`, `http://localhost:3000`) | Comma-separated `Origin` values allowed by CORS (e.g. `https://app.example.com,http://localhost:5173`). Invalid entries are skipped with a log warning. |
+
+## Single-tenant authorization model
+
+Bearer tokens (`RUSVEL_API_TOKEN`, `RUSVEL_API_READ_TOKEN`) are **shared secrets**: any client that presents a valid token can call any `/api/*` route, including paths with a `session_id`. The API does **not** enforce per-session object-level authorization (see [OWASP API1:2023 Broken Object Level Authorization](https://owasp.org/API-Security/editions/2023/en/0xa1-broken-object-level-authorization/)). That matches the intended **solo operator / single SQLite database** deployment. Multi-tenant or shared-host scenarios need a different model (see stub [adr-auth-phase2.md](../design/adr-auth-phase2.md): session-scoped API keys, ACL, etc.).
 
 ## Bearer tokens
 
