@@ -56,7 +56,7 @@ use axum::http::{HeaderValue, Method};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use tower::ServiceBuilder;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 
@@ -139,6 +139,44 @@ pub struct AppState {
     pub operator_prefs: operator_runtime::OperatorRuntimePrefs,
     /// When set, `POST /api/system/shutdown` signals graceful exit (same channel as Ctrl+C).
     pub shutdown_tx: Option<tokio::sync::watch::Sender<bool>>,
+}
+
+fn default_cors_header_values() -> Vec<HeaderValue> {
+    ["http://localhost:5173", "http://localhost:3000"]
+        .into_iter()
+        .filter_map(|o| HeaderValue::from_str(o).ok())
+        .collect()
+}
+
+/// `RUSVEL_CORS_ORIGINS`: comma-separated list. When unset or empty, localhost dev origins are used.
+fn cors_allow_origin_from_env() -> AllowOrigin {
+    const ENV: &str = "RUSVEL_CORS_ORIGINS";
+    let defaults = default_cors_header_values();
+    let raw = std::env::var(ENV).ok();
+    let Some(raw) = raw
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    else {
+        return AllowOrigin::list(defaults);
+    };
+    let mut origins: Vec<HeaderValue> = raw
+        .split(',')
+        .map(str::trim)
+        .filter(|o| !o.is_empty())
+        .filter_map(|o| match HeaderValue::from_str(o) {
+            Ok(h) => Some(h),
+            Err(_) => {
+                tracing::warn!(origin = o, "{ENV}: invalid origin, skipped");
+                None
+            }
+        })
+        .collect();
+    if origins.is_empty() {
+        tracing::warn!("{ENV}: no valid entries; using localhost defaults");
+        origins = defaults;
+    }
+    AllowOrigin::list(origins)
 }
 
 /// Build the Axum router with all routes, CORS, and tracing middleware.
@@ -625,10 +663,7 @@ pub fn build_router_with_frontend(
         api
     };
 
-    let allowed_origins = [
-        "http://localhost:5173".parse::<HeaderValue>().unwrap(),
-        "http://localhost:3000".parse::<HeaderValue>().unwrap(),
-    ];
+    let cors_allow_origin = cors_allow_origin_from_env();
     let rate_limit: u64 = std::env::var("RUSVEL_RATE_LIMIT")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -636,7 +671,7 @@ pub fn build_router_with_frontend(
 
     app.layer(
         CorsLayer::new()
-            .allow_origin(allowed_origins)
+            .allow_origin(cors_allow_origin)
             .allow_methods([
                 Method::GET,
                 Method::POST,

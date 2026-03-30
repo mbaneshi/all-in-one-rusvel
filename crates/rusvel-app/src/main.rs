@@ -1158,7 +1158,16 @@ async fn main() -> Result<()> {
                     }
 
                     let job_id = job.id;
-                    tracing::info!(job_id = %job_id, kind = ?job.kind, "Processing job");
+                    let http_request_id = job
+                        .metadata
+                        .get("http_request_id")
+                        .and_then(|v| v.as_str());
+                    tracing::info!(
+                        job_id = %job_id,
+                        kind = ?job.kind,
+                        http_request_id = http_request_id,
+                        "Processing job"
+                    );
 
                     let job_finish: std::result::Result<
                         Option<JobResult>,
@@ -1179,7 +1188,12 @@ async fn main() -> Result<()> {
                                     metadata: serde_json::json!({"engine": "code"}),
                                 })),
                                 Err(e) => {
-                                    tracing::error!(job_id = %job_id, error = %e, "Code analyze failed");
+                                    tracing::error!(
+                                        job_id = %job_id,
+                                        http_request_id = http_request_id,
+                                        error = %e,
+                                        "Code analyze failed"
+                                    );
                                     Err(e)
                                 }
                             }
@@ -1208,7 +1222,12 @@ async fn main() -> Result<()> {
                                         metadata: serde_json::json!({"engine": "content"}),
                                     })),
                                     Err(e) => {
-                                        tracing::error!(job_id = %job_id, error = %e, "Content publish failed");
+                                        tracing::error!(
+                                            job_id = %job_id,
+                                            http_request_id = http_request_id,
+                                            error = %e,
+                                            "Content publish failed"
+                                        );
                                         Err(e)
                                     }
                                 }
@@ -1238,7 +1257,12 @@ async fn main() -> Result<()> {
                                     metadata: serde_json::json!({"engine": "harvest"}),
                                 })),
                                 Err(e) => {
-                                    tracing::error!(job_id = %job_id, error = %e, "Harvest scan failed");
+                                    tracing::error!(
+                                        job_id = %job_id,
+                                        http_request_id = http_request_id,
+                                        error = %e,
+                                        "Harvest scan failed"
+                                    );
                                     Err(e)
                                 }
                             }
@@ -1289,7 +1313,12 @@ async fn main() -> Result<()> {
                                         }
                                     }
                                     Err(e) => {
-                                        tracing::error!(job_id = %job_id, error = %e, "Proposal draft failed");
+                                        tracing::error!(
+                                            job_id = %job_id,
+                                            http_request_id = http_request_id,
+                                            error = %e,
+                                            "Proposal draft failed"
+                                        );
                                         Err(e)
                                     }
                                 }
@@ -1573,6 +1602,7 @@ async fn main() -> Result<()> {
                                             Err(e) => {
                                                 tracing::error!(
                                                     job_id = %job_id,
+                                                    http_request_id = http_request_id,
                                                     error = %e,
                                                     "Failed to enqueue next outreach step"
                                                 );
@@ -1584,13 +1614,23 @@ async fn main() -> Result<()> {
                                     }
                                 }
                                 Err(e) => {
-                                    tracing::error!(job_id = %job_id, error = %e, "OutreachSend failed");
+                                    tracing::error!(
+                                        job_id = %job_id,
+                                        http_request_id = http_request_id,
+                                        error = %e,
+                                        "OutreachSend failed"
+                                    );
                                     Err(e)
                                 }
                             }
                         }
                         _ => {
-                            tracing::warn!(job_id = %job_id, kind = ?job.kind, "Unknown job kind");
+                            tracing::warn!(
+                                job_id = %job_id,
+                                kind = ?job.kind,
+                                http_request_id = http_request_id,
+                                "Unknown job kind"
+                            );
                             Err(rusvel_core::error::RusvelError::Validation(format!(
                                 "unknown job kind: {:?}",
                                 job.kind

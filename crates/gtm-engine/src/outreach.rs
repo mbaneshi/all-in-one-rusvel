@@ -125,6 +125,19 @@ const KIND_SEQUENCE: &str = "outreach_sequence";
 const KIND_FOLLOWUP: &str = "followup";
 const KIND_SEQ_RUN: &str = "outreach_sequence_run";
 
+fn outreach_followup_metadata_from_parent(parent: &Job) -> serde_json::Value {
+    let mut meta = serde_json::json!({
+        "department": "gtm",
+        "requires_approval": true,
+    });
+    if let Some(v) = parent.metadata.get("http_request_id") {
+        if let Some(obj) = meta.as_object_mut() {
+            obj.insert("http_request_id".into(), v.clone());
+        }
+    }
+    meta
+}
+
 pub struct OutreachManager {
     storage: Arc<dyn StoragePort>,
     agent: Arc<dyn AgentPort>,
@@ -425,10 +438,7 @@ impl OutreachManager {
                         "template": next_step.template,
                     }),
                     max_retries: 2,
-                    metadata: serde_json::json!({
-                        "department": "gtm",
-                        "requires_approval": true,
-                    }),
+                    metadata: outreach_followup_metadata_from_parent(job),
                     scheduled_at: Some(Utc::now() + Duration::days(i64::from(delay))),
                 })
             } else {

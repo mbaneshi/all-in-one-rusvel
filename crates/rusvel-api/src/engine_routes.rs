@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::{Path as AxumPath, Query, State};
+use axum::http::Extensions;
 use axum::http::StatusCode;
 use chrono::{DateTime, Utc};
 use gtm_engine::events as gtm_events;
@@ -32,6 +33,7 @@ use forge_engine::PipelineOrchestrationDef;
 use harvest_engine::{HarvestScanParams, scan_from_params};
 
 use crate::AppState;
+use crate::request_id::merge_http_request_metadata;
 
 type ApiResult<T> = Result<Json<T>, (StatusCode, String)>;
 
@@ -577,6 +579,7 @@ pub struct ProposalRequest {
 
 pub async fn harvest_proposal(
     State(state): State<Arc<AppState>>,
+    extensions: Extensions,
     Json(body): Json<ProposalRequest>,
 ) -> ApiResult<serde_json::Value> {
     let engine = state.harvest_engine.as_ref().ok_or((
@@ -602,7 +605,7 @@ pub async fn harvest_proposal(
                 "profile": body.profile,
             }),
             max_retries: 3,
-            metadata: serde_json::json!({}),
+            metadata: merge_http_request_metadata(&extensions, serde_json::json!({})),
             scheduled_at: None,
         })
         .await

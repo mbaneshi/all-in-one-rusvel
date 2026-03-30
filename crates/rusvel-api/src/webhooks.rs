@@ -5,6 +5,7 @@ use std::sync::Arc;
 use axum::Json;
 use axum::body::Bytes;
 use axum::extract::State;
+use axum::http::Extensions;
 use axum::http::{HeaderMap, StatusCode};
 use rusvel_core::domain::{
     AutomationTriggerPayload, JobKind, NewJob, AUTOMATION_WEBHOOK_EVENT_KIND,
@@ -16,6 +17,7 @@ use serde_json::{Value, json};
 
 use crate::AppState;
 use crate::automation::AUTOMATION_DISPATCH_JOB_KIND;
+use crate::request_id::merge_http_request_metadata;
 
 const SIGNATURE_HEADER: &str = "x-rusvel-signature";
 
@@ -75,6 +77,7 @@ pub async fn receive_webhook(
     State(state): State<Arc<AppState>>,
     axum::extract::Path(id): axum::extract::Path<String>,
     headers: HeaderMap,
+    extensions: Extensions,
     body: Bytes,
 ) -> Result<Json<Value>, (StatusCode, String)> {
     let sig = signature_from_headers(&headers);
@@ -114,10 +117,13 @@ pub async fn receive_webhook(
                 kind: JobKind::Custom("forge.pipeline".into()),
                 payload: json!({ "def": def }),
                 max_retries: 2,
-                metadata: json!({
-                    "source": "webhook",
-                    "event_id": outcome.event_id.to_string(),
-                }),
+                metadata: merge_http_request_metadata(
+                    &extensions,
+                    json!({
+                        "source": "webhook",
+                        "event_id": outcome.event_id.to_string(),
+                    }),
+                ),
                 scheduled_at: None,
             })
             .await
@@ -148,11 +154,14 @@ pub async fn receive_webhook(
                 kind: JobKind::Custom(AUTOMATION_DISPATCH_JOB_KIND.into()),
                 payload: json!({ "trigger": trigger_val }),
                 max_retries: 2,
-                metadata: json!({
-                    "source": "webhook",
-                    "event_id": outcome.event_id.to_string(),
-                    "automation": true,
-                }),
+                metadata: merge_http_request_metadata(
+                    &extensions,
+                    json!({
+                        "source": "webhook",
+                        "event_id": outcome.event_id.to_string(),
+                        "automation": true,
+                    }),
+                ),
                 scheduled_at: None,
             })
             .await
