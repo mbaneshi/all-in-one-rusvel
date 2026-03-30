@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { get } from 'svelte/store';
 	import DeptSectionScaffold from '$lib/components/department/DeptSectionScaffold.svelte';
 	import DeptTerminalPane from '$lib/components/department/DeptTerminalPane.svelte';
 	import { activeSession } from '$lib/stores';
 
-	let currentSession: import('$lib/api').SessionSummary | null = $state(null);
+	let currentSession: import('$lib/api').SessionSummary | null = $state(get(activeSession));
 
 	onMount(() => {
 		const unsub = activeSession.subscribe((v) => {

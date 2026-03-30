@@ -2,26 +2,20 @@
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
 	import { activeSession } from '$lib/stores';
+	import { terminalDeptPaneUrl } from '$lib/clientTerminalApi';
 	import DeptTerminal from '$lib/components/DeptTerminal.svelte';
 	import { STANDALONE_TERMINAL_DEPT_ID } from '$lib/terminalConstants';
 
-	let currentSession: import('$lib/api').SessionSummary | null = $state(null);
+	let currentSession: import('$lib/api').SessionSummary | null = $state(get(activeSession));
 	let terminalPaneId = $state<string | null>(null);
 	let terminalLoading = $state(false);
 	let terminalErr = $state('');
-
-	function apiBase(): string {
-		if (typeof window === 'undefined') return '';
-		const { protocol, hostname, port } = window.location;
-		const apiPort = port === '5173' ? '3000' : port;
-		return `${protocol}//${hostname}${apiPort ? `:${apiPort}` : ''}`;
-	}
 
 	async function openPane(sessionId: string): Promise<void> {
 		terminalLoading = true;
 		terminalErr = '';
 		try {
-			const url = `${apiBase()}/api/terminal/dept/${encodeURIComponent(STANDALONE_TERMINAL_DEPT_ID)}?session_id=${encodeURIComponent(sessionId)}`;
+			const url = terminalDeptPaneUrl(STANDALONE_TERMINAL_DEPT_ID, sessionId);
 			const r = await fetch(url);
 			if (!r.ok) {
 				const t = await r.text();

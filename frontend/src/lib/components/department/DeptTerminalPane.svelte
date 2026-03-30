@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import DeptTerminal from '$lib/components/DeptTerminal.svelte';
+	import { terminalDeptPaneUrl } from '$lib/clientTerminalApi';
 
 	let {
 		dept,
@@ -14,23 +16,34 @@
 	let terminalLoading = $state(false);
 	let terminalErr = $state('');
 
-	function apiBase(): string {
-		if (typeof window === 'undefined') return '';
-		const { protocol, hostname, port } = window.location;
-		const apiPort = port === '5173' ? '3000' : port;
-		return `${protocol}//${hostname}${apiPort ? `:${apiPort}` : ''}`;
-	}
+	const OPEN_TIMEOUT_MS = 25_000;
 
 	$effect(() => {
-		if (!sessionId) return;
-		const key = `${sessionId}:${dept}`;
-		if (terminalPaneForKey === key && terminalPaneId) return;
+		const sid = sessionId;
+		const d = dept;
+		if (!sid) {
+			untrack(() => {
+				terminalPaneId = null;
+				terminalPaneForKey = null;
+				terminalErr = '';
+				terminalLoading = false;
+			});
+			return;
+		}
+		const key = `${sid}:${d}`;
+		if (untrack(() => terminalPaneForKey === key && terminalPaneId !== null)) {
+			return;
+		}
 
 		let cancelled = false;
-		terminalLoading = true;
-		terminalErr = '';
-		const url = `${apiBase()}/api/terminal/dept/${encodeURIComponent(dept)}?session_id=${encodeURIComponent(sessionId)}`;
-		fetch(url)
+		untrack(() => {
+			terminalLoading = true;
+			terminalErr = '';
+		});
+		const url = terminalDeptPaneUrl(d, sid);
+		const ac = new AbortController();
+		const timer = setTimeout(() => ac.abort(), OPEN_TIMEOUT_MS);
+		fetch(url, { signal: ac.signal })
 			.then((r) => {
 				if (!r.ok) return r.text().then((t) => Promise.reject(new Error(t || r.statusText)));
 				return r.json();
@@ -39,16 +52,27 @@
 				if (!cancelled && j.pane_id) {
 					terminalPaneId = j.pane_id;
 					terminalPaneForKey = key;
+				} else if (!cancelled && !j.pane_id) {
+					throw new Error('No pane_id in response');
 				}
 			})
 			.catch((e: unknown) => {
-				if (!cancelled) terminalErr = e instanceof Error ? e.message : 'Failed to open terminal';
+				if (!cancelled) {
+					if (e instanceof DOMException && e.name === 'AbortError') {
+						terminalErr = `Opening terminal timed out after ${OPEN_TIMEOUT_MS / 1000}s (check API is reachable via this origin)`;
+					} else {
+						terminalErr = e instanceof Error ? e.message : 'Failed to open terminal';
+					}
+				}
 			})
 			.finally(() => {
+				clearTimeout(timer);
 				if (!cancelled) terminalLoading = false;
 			});
 		return () => {
 			cancelled = true;
+			clearTimeout(timer);
+			ac.abort();
 		};
 	});
 </script>

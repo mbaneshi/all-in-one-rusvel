@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { browser } from '$app/environment';
 	import { get } from 'svelte/store';
 	import { TerminalSquare, ListTodo, Activity, X } from 'lucide-svelte';
 	import DeptTerminal from '$lib/components/DeptTerminal.svelte';
 	import { activeSession, bottomPanelOpen, bottomPanelTab } from '$lib/stores';
 	import type { BottomPanelTab } from '$lib/stores';
+	import { terminalDeptPaneUrl } from '$lib/clientTerminalApi';
 	import { getDeptEvents, getJobs, type Event, type JobListItem } from '$lib/api';
 	import Button from '$lib/components/ui/Button.svelte';
 
@@ -31,13 +31,6 @@
 		{ id: 'jobs', label: 'Jobs', icon: ListTodo },
 		{ id: 'events', label: 'Events', icon: Activity }
 	];
-
-	function apiBase(): string {
-		if (!browser) return '';
-		const { protocol, hostname, port } = window.location;
-		const apiPort = port === '5173' ? '3000' : port;
-		return `${protocol}//${hostname}${apiPort ? `:${apiPort}` : ''}`;
-	}
 
 	function close() {
 		bottomPanelOpen.set(false);
@@ -93,7 +86,7 @@
 		let cancelled = false;
 		terminalLoading = true;
 		terminalErr = '';
-		const url = `${apiBase()}/api/terminal/dept/${encodeURIComponent(deptId)}?session_id=${encodeURIComponent(sessionId)}`;
+		const url = terminalDeptPaneUrl(deptId, sessionId);
 		fetch(url)
 			.then((r) => {
 				if (!r.ok) return r.text().then((t) => Promise.reject(new Error(t || r.statusText)));

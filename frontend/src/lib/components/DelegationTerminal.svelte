@@ -2,6 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { Terminal } from '@xterm/xterm';
 	import { FitAddon } from '@xterm/addon-fit';
+	import { terminalPaneResizeUrl, terminalWebSocketUrl } from '$lib/clientTerminalApi';
 	import '@xterm/xterm/css/xterm.css';
 
 	let { runId, apiOrigin = '' }: { runId: string; apiOrigin?: string } = $props();
@@ -19,16 +20,14 @@
 
 	function resolveHttpOrigin(): string {
 		if (apiOrigin) return apiOrigin.replace(/\/$/, '');
-		if (typeof window === 'undefined') return '';
-		const { protocol, hostname, port } = window.location;
-		const apiPort = port === '5173' ? '3000' : port;
-		return `${protocol}//${hostname}${apiPort ? `:${apiPort}` : ''}`;
+		return '';
 	}
 
 	function postResize(rows: number, cols: number) {
 		if (!activePaneId || rows <= 0 || cols <= 0) return;
-		const base = resolveHttpOrigin();
-		const url = `${base}/api/terminal/pane/${encodeURIComponent(activePaneId)}/resize`;
+		const url = apiOrigin
+			? `${resolveHttpOrigin()}/api/terminal/pane/${encodeURIComponent(activePaneId)}/resize`
+			: terminalPaneResizeUrl(activePaneId);
 		fetch(url, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -46,11 +45,14 @@
 	}
 
 	function getWsUrl(id: string): string {
-		const base = resolveHttpOrigin();
-		const u = new URL(base);
-		const wsProto = u.protocol === 'https:' ? 'wss:' : 'ws:';
-		const qp = new URLSearchParams({ pane_id: id });
-		return `${wsProto}//${u.host}/api/terminal/ws?${qp.toString()}`;
+		if (apiOrigin) {
+			const base = resolveHttpOrigin();
+			const u = new URL(base);
+			const wsProto = u.protocol === 'https:' ? 'wss:' : 'ws:';
+			const qp = new URLSearchParams({ pane_id: id });
+			return `${wsProto}//${u.host}/api/terminal/ws?${qp.toString()}`;
+		}
+		return terminalWebSocketUrl(id);
 	}
 
 	function disconnectWs() {
@@ -94,8 +96,9 @@
 	type PaneRow = { id?: string };
 
 	async function fetchFirstPaneIdForRun(rid: string): Promise<string | null> {
-		const base = resolveHttpOrigin();
-		const r = await fetch(`${base}/api/terminal/runs/${encodeURIComponent(rid)}/panes`);
+		const path = `/api/terminal/runs/${encodeURIComponent(rid)}/panes`;
+		const url = apiOrigin ? `${resolveHttpOrigin()}${path}` : path;
+		const r = await fetch(url);
 		if (!r.ok) {
 			error =
 				r.status === 503 ? 'Terminal not configured on server' : 'Failed to list panes';

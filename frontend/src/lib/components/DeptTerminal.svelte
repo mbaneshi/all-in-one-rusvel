@@ -2,6 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { Terminal } from '@xterm/xterm';
 	import { FitAddon } from '@xterm/addon-fit';
+	import { terminalPaneResizeUrl, terminalWebSocketUrl } from '$lib/clientTerminalApi';
 	import '@xterm/xterm/css/xterm.css';
 
 	let {
@@ -26,8 +27,7 @@
 		// (WS subscribers miss pre-connect broadcast output — resize is the usual fix).
 		const r = rows > 0 ? rows : 24;
 		const c = cols > 0 ? cols : 80;
-		const base = resolveHttpOrigin();
-		const url = `${base}/api/terminal/pane/${encodeURIComponent(paneId)}/resize`;
+		const url = terminalPaneResizeUrl(paneId);
 		fetch(url, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -44,20 +44,15 @@
 		}, 80);
 	}
 
-	function resolveHttpOrigin(): string {
-		if (apiOrigin) return apiOrigin.replace(/\/$/, '');
-		if (typeof window === 'undefined') return '';
-		const { protocol, hostname, port } = window.location;
-		const apiPort = port === '5173' ? '3000' : port;
-		return `${protocol}//${hostname}${apiPort ? `:${apiPort}` : ''}`;
-	}
-
 	function getWsUrl(id: string): string {
-		const base = resolveHttpOrigin();
-		const u = new URL(base);
-		const wsProto = u.protocol === 'https:' ? 'wss:' : 'ws:';
-		const qp = new URLSearchParams({ pane_id: id });
-		return `${wsProto}//${u.host}/api/terminal/ws?${qp.toString()}`;
+		if (apiOrigin) {
+			const base = apiOrigin.replace(/\/$/, '');
+			const u = new URL(base);
+			const wsProto = u.protocol === 'https:' ? 'wss:' : 'ws:';
+			const qp = new URLSearchParams({ pane_id: id });
+			return `${wsProto}//${u.host}/api/terminal/ws?${qp.toString()}`;
+		}
+		return terminalWebSocketUrl(id);
 	}
 
 	function connect(id: string) {
