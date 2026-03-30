@@ -79,7 +79,7 @@ This document merges **workstreams** (what to test, with detailed checklists) an
 
 | Area | Count | Quality |
 |------|-------|---------|
-| Rust tests (workspace sum) | ~636 | Good coverage on engines, sparse on adapters; see `docs/status/current-state.md` |
+| Rust tests (workspace sum) | ~645 | Good coverage on engines, sparse on adapters; see `docs/status/current-state.md` |
 | Rust integration tests | ~92 | Strong API smoke tests, engine round-trips |
 | Benchmarks | 2 | DB open + registry load (Criterion) |
 | Frontend visual tests | 27 routes | Playwright screenshot comparison |
@@ -107,7 +107,7 @@ Align targets with [docs/testing/coverage-strategy.md](../testing/coverage-strat
 ### Sprint 0 — Baseline capture (tasks)
 
 - Record `cargo test` workspace counts and `cargo llvm-cov test --workspace --summary-only` (match CI: `--fail-under-lines 42`).  
-- Inventory [`crates/rusvel-api/tests/`](../../crates/rusvel-api/tests/) vs **141** `.route(` registrations in [`crates/rusvel-api/src/lib.rs`](../../crates/rusvel-api/src/lib.rs).  
+- Inventory [`crates/rusvel-api/tests/`](../../crates/rusvel-api/tests/) vs **153** `.route(` registrations in [`crates/rusvel-api/src/lib.rs`](../../crates/rusvel-api/src/lib.rs).  
 - Document **test taxonomy** (this glossary), **DoD** (§8), and **flakiness policy** (§9).  
 - Decide threshold for introducing **`rusvel-test-utils`** (Appendix A: e.g. when mocks duplicate across >3 crates).  
 
@@ -467,7 +467,7 @@ export default defineConfig({
 
 ## 12. Workstream: API contract and negative paths (Sprint 3)
 
-> Goal: **141** route chains in `rusvel-api/src/lib.rs` — systematic coverage grouped by handler module. ~120+ new tests.
+> Goal: **153** route chains in `rusvel-api/src/lib.rs` — systematic coverage grouped by handler module. ~120+ new tests.
 
 ### 12.1 Per-route expectations
 
@@ -651,7 +651,7 @@ Maintain a table (spreadsheet or markdown) while executing Sprint 3:
 | e.g. `sessions` | `GET /api/sessions` | ✓ | | | | | |
 | … | … | | | | | | |
 
-Group rows by file under `crates/rusvel-api/src/` (e.g. `chat.rs`, `jobs.rs`). Total route registrations: **141** (`.route(` in `lib.rs`).
+Group rows by file under `crates/rusvel-api/src/` (e.g. `chat.rs`, `jobs.rs`). Total route registrations: **153** (`.route(` in `lib.rs`).
 
 ---
 

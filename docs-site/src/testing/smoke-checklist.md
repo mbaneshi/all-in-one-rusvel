@@ -7,7 +7,7 @@ Quick pass to verify everything works after a build. Run these in order -- takes
 | # | Command | Pass if |
 |---|---------|---------|
 | 1 | `cargo build` | Compiles without errors |
-| 2 | `cargo test` | ~636 tests pass (workspace sum; see `docs/status/current-state.md`) |
+| 2 | `cargo test` | ~645 tests pass (workspace sum; see `docs/status/current-state.md`) |
 | 3 | `cargo run -- --help` | Shows help with all subcommands |
 | 4 | `cargo run -- session create smoke-test` | Prints session UUID |
 | 5 | `cargo run -- session list` | Shows the smoke-test session |

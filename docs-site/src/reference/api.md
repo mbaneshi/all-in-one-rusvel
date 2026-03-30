@@ -3,7 +3,7 @@
 
 RUSVEL exposes a JSON REST API on port **3000** via Axum. All endpoints use the `/api/` prefix. CORS is enabled for all origins.
 
-**Scale (verify on `main`):** the main router in `crates/rusvel-api/src/lib.rs` registers **141** `.route(` chains. Handler logic is split across **36** modules (one `*.rs` per module, excluding `lib.rs`). That is **not** the same as “141 HTTP methods” — a single chain can register `get().post()`.
+**Scale (verify on `main`):** the main router in `crates/rusvel-api/src/lib.rs` registers **153** `.route(` chains. Handler logic is split across **39** modules (one `*.rs` per module, excluding `lib.rs`). That is **not** the same as “153 HTTP methods” — a single chain can register `get().post()`.
 
 **Router modules:** `agents`, `analytics`, `approvals`, `auth`, `browser`, `build_cmd`, `capability`, `chat`, `config`, `cron`, `db_routes`, `department`, `engine_routes`, `flow_routes`, `help`, `hook_dispatch`, `hooks`, `jobs`, `kits`, `knowledge`, `mcp_servers`, `pipeline_runner`, `playbooks`, `routes`, `rules`, `skills`, `system`, `terminal`, `visual_report`, `webhooks`, `workflows`.
 

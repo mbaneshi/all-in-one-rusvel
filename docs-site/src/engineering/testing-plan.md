@@ -6,7 +6,7 @@ RUSVEL targets **~1200+ tests** across Rust and frontend, with staged workspace 
 
 | Area | Count | Notes |
 |------|-------|-------|
-| Rust tests (workspace sum) | ~636 | Sum of `running N tests` from `cargo test --workspace`; see `docs/status/current-state.md` |
+| Rust tests (workspace sum) | ~645 | Sum of `running N tests` from `cargo test --workspace`; see `docs/status/current-state.md` |
 | Rust integration tests | ~92 | Strong API smoke tests, engine round-trips |
 | Benchmarks | 2 | Criterion: DB open + registry load |
 | Frontend visual tests | 27 routes | Playwright screenshot comparison |

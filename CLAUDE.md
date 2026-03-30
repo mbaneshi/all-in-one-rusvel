@@ -8,7 +8,7 @@
 ```bash
 cargo build                    # Build all workspace members (55 crates)
 cargo bench -p rusvel-app --bench boot  # Criterion boot slice (SQLite + registry); optional local perf
-cargo test                     # Run full suite from repo root (~636 tests summed; see docs/status/current-state.md)
+cargo test                     # Run full suite from repo root (~645 tests summed; see docs/status/current-state.md)
 cargo run                      # Start API server on :3000 (requires Ollama)
 cargo run -- --help            # Show CLI help
 cargo run -- --mcp             # Start MCP server (stdio JSON-RPC)
@@ -100,7 +100,7 @@ crates/
 ├── dept-infra/           Infra department (DepartmentApp)
 ├── dept-messaging/       Messaging department (DepartmentApp)
 ├── rusvel-cli/           3-tier CLI: one-shot + REPL + TUI
-├── rusvel-api/           Axum HTTP: ~141 `.route(` chains in lib.rs, 36 handler modules
+├── rusvel-api/           Axum HTTP: ~153 `.route(` chains in lib.rs, 39 handler modules
 ├── rusvel-mcp/           MCP server (stdio JSON-RPC) — wired via --mcp flag
 ├── rusvel-tui/           TUI dashboard (ratatui) — wired via --tui flag
 └── rusvel-app/           Binary entry point + composition root + rust-embed frontend
@@ -195,7 +195,7 @@ pnpm test:analyze              # AI-powered visual diff analysis (Claude Vision)
 ## Testing
 
 ```bash
-cargo test                     # Full workspace from repo root (~636 tests summed; counts vary by cargo output)
+cargo test                     # Full workspace from repo root (~645 tests summed; counts vary by cargo output)
 cargo test -p rusvel-core      # Single crate
 cargo test -p forge-engine     # Engine tests (15 tests, use mock ports)
 cargo test -p content-engine   # Content engine (7 tests)
@@ -222,11 +222,11 @@ curl -X POST http://localhost:3000/api/system/visual-report/self-correct  # Auto
 
 MCP tool: `visual_inspect` — run visual tests from Claude sessions.
 
-## API Modules (rusvel-api, 36 modules beside lib.rs)
+## API Modules (rusvel-api, 39 modules beside lib.rs)
 
-agents, analytics, approvals, artifacts, auth, browser, build_cmd, capability, chat, config, connectors, cron,
+agents, analytics, approvals, artifacts, auth, automation, browser, build_cmd, capability, chat, config, connectors, cron,
 dashboard, db_routes, department, engine_routes, flow_routes, help, hook_dispatch, hooks, jobs, kits,
-knowledge, mcp_servers, pipeline_runner, playbooks, request_id (crate-internal), routes, rules, skills,
+knowledge, mcp_servers, operator_runtime, pipeline_runner, playbooks, request_id (crate-internal), routes, rules, secrets, skills,
 sse_helpers (crate-internal), system, terminal, visual_report, webhooks, workflows
 
 ## Claude Code Tooling
@@ -272,7 +272,7 @@ uv run --with anthropic ...    # One-off with extra deps
 
 ## Stack
 
-- Rust edition 2024, SQLite WAL, Axum, Clap 4, reedline, ratatui, tokio (~69,456 lines Rust under `crates/`, 295 source files — see `docs/status/current-state.md`)
+- Rust edition 2024, SQLite WAL, Axum, Clap 4, reedline, ratatui, tokio (~73,058 lines Rust under `crates/`, 301 source files — see `docs/status/current-state.md`)
 - SvelteKit 5, Tailwind CSS 4, **pnpm** package manager
 - Python scripts: **uv** (pyproject.toml at workspace root)
 - LLM: Ollama (local), Claude API, Claude CLI, OpenAI — all implemented

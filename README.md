@@ -55,7 +55,7 @@ rusvel --mcp            # MCP server (stdio JSON-RPC) for Claude Code
 
 ## Architecture
 
-Hexagonal (ports & adapters). **55** workspace members, **~69,456** lines Rust across **295** `*.rs` files under `crates/`, **13** domain engines plus **14** `dept-*` department apps (including `dept-messaging` and `dept-flow`), single binary. DepartmentApp pattern (ADR-014). Full metrics: [docs/status/current-state.md](docs/status/current-state.md).
+Hexagonal (ports & adapters). **55** workspace members, **~73,058** lines Rust across **301** `*.rs` files under `crates/`, **13** domain engines plus **14** `dept-*` department apps (including `dept-messaging` and `dept-flow`), single binary. DepartmentApp pattern (ADR-014). Full metrics: [docs/status/current-state.md](docs/status/current-state.md).
 
 ```
 SURFACES: CLI (Clap) | REPL (reedline) | TUI (Ratatui) | Web (Svelte) | MCP

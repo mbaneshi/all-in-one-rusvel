@@ -113,7 +113,7 @@ First working release — 190 commits across 7 days. 54 crates, ~62K lines of Ru
 
 ### Surfaces
 - **rusvel-cli** — 3-tier CLI: one-shot (12 departments) + REPL (reedline) + TUI (ratatui)
-- **rusvel-api** — Axum HTTP with ~141 route chains, 36 handler modules, SSE streaming, rate limiting, request IDs, deep health check
+- **rusvel-api** — Axum HTTP with ~153 route chains, 39 handler modules, SSE streaming, rate limiting, request IDs, deep health check
 - **rusvel-mcp** — MCP server (stdio JSON-RPC) via `--mcp` flag
 - **rusvel-tui** — TUI dashboard (ratatui, 4-panel layout) via `--tui` flag
 
@@ -148,7 +148,7 @@ First working release — 190 commits across 7 days. 54 crates, ~62K lines of Ru
 - LLM spend aggregation by department
 
 ### Testing
-- ~636 tests across workspace (sum of `running N tests` lines; see `docs/status/current-state.md`)
+- ~645 tests across workspace (sum of `running N tests` lines; see `docs/status/current-state.md`)
 - 65 DepartmentApp contract tests for all 13 departments
 - 25 integration tests for 5 engine/adapter crates
 - 14 CLI arg parsing tests + 8 TUI widget rendering tests

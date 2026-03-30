@@ -432,7 +432,7 @@ pub async fn dept_chat(
 3. **Persist playbooks and runs** — In-memory `PlaybookStore` does not survive restarts; move to `ObjectStore` or SQL with migration.
 4. **Playbook `Approval` completion** — Add resume endpoint + job/approval integration so `Paused` runs can continue (aligns with ADR-008 human gates).
 5. **Scope `@agent` by department** — Match `list_agents` filtering (`metadata.engine`) in `dept_chat` to avoid cross-dept persona leakage.
-6. **AuthZ middleware** — Plans reference phased auth (`docs/plans/sprint-6-7-implementation.md`); API surface is large (`~141` route chains in `lib.rs` per `current-state.md`).
+6. **AuthZ middleware** — Plans reference phased auth (`docs/plans/sprint-6-7-implementation.md`); API surface is large (`~153` route chains in `lib.rs` per `current-state.md`).
 7. **Structured logging / tracing** — Correlate `run_id`, `session_id`, `department_id` on every SSE stream and hook execution for ops.
 8. **Rate limits & budget enforcement** — `AgentConfig.budget_limit` exists; ensure hard enforcement and user-visible burn-down in API responses.
 

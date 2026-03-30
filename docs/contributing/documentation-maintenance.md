@@ -20,7 +20,7 @@ rg -n '48 crate|49 crate|50 workspace members|54 workspace members|54 crates\)' 
 rg -n '43,670|52,560|185 source|215 Rust' --glob '*.md' .
 
 # Stale API surface counts
-rg -n '105.*\.route|124 handler|23 module' --glob '*.md' .
+rg -n '105.*\.route|124 handler|23 module|141.*\.route\(|141 route chains|36 handler modules' --glob '*.md' .
 ```
 
 Re-verify commands (also in `current-state`):

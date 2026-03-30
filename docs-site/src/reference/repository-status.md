@@ -29,11 +29,11 @@ When this mdBook page and the repo diverge, **trust the repo files above** and r
 | Metric | Count |
 |--------|------:|
 | Workspace members | 55 |
-| Rust LOC (`crates/*.rs`) | ~69,456 |
-| Rust source files (`crates/`) | 295 |
-| Tests (approx., full `cargo test`) | ~636 |
-| HTTP route chains in API router | 141 |
-| API modules (`rusvel-api`, excl. `lib.rs`) | 36 |
+| Rust LOC (`crates/*.rs`) | ~73,058 |
+| Rust source files (`crates/`) | 301 |
+| Tests (approx., full `cargo test`) | ~645 |
+| HTTP route chains in API router | 153 |
+| API modules (`rusvel-api`, excl. `lib.rs`) | 39 |
 | Port traits (`rusvel-core/src/ports.rs`) | 22 |
 | Departments / `dept-*` crates | 14 / 14 |
 | Engines | 13 (6 wired + 7 skeletons) |

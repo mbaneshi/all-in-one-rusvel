@@ -72,7 +72,7 @@ tokio = { workspace = true }
 
 **Port count:** `rg '^pub trait ' crates/rusvel-core/src/ports.rs` yields **22** traits (including `EventStore`, `ObjectStore`, `SessionStore`, `JobStore`, `MetricStore` under the storage split, plus `RusvelBasePort`). `docs/status/current-state.md` uses **22**.
 
-**Domain types “82+”:** `domain.rs` has on the order of **100+** `pub struct` / `pub enum` lines (repo metric ~111 in `current-state.md`). “82+” is conservative, not wrong.
+**Domain types “82+”:** `domain.rs` has on the order of **100+** `pub struct` / `pub enum` lines (repo metric **~114** in `current-state.md`). “82+” is conservative, not wrong.
 
 **“Everything is a Rust trait”** — **Overstated.** `rusvel-core` is mostly **types + traits**; large `domain.rs` is concrete structs/enums.
 

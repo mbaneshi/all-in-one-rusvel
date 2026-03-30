@@ -47,7 +47,7 @@ RUSVEL follows **hexagonal architecture** (ports and adapters). The core princip
 The heart of the system. Contains:
 
 - **22 port traits** in `ports.rs` — includes five `*Store` subtraits under the storage model, **`BrowserPort`**, **`ChannelPort`**, **`RusvelBasePort`**, and primary ports (LlmPort, AgentPort, ToolPort, EventPort, StoragePort, MemoryPort, JobPort, SessionPort, AuthPort, ConfigPort, EmbeddingPort, VectorStorePort, DeployPort, TerminalPort). `DepartmentApp` is defined under `department/`.
-- **~100** `pub struct` / `pub enum` in `domain.rs`, plus shared types — Session, Goal, Event, Agent, Content, Opportunity, Contact, Task, DepartmentManifest, etc.
+- **~114** `pub struct` / `pub enum` in `domain.rs`, plus shared types — Session, Goal, Event, Agent, Content, Opportunity, Contact, Task, DepartmentManifest, etc. (see `docs/status/current-state.md` §1).
 - Zero framework dependencies
 
 ### Layer 2: Adapters

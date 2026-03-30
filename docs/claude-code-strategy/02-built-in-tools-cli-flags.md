@@ -63,7 +63,7 @@ Grep: "metadata:"                   → audit schema evolution fields
 **Core RUSVEL commands that Bash executes:**
 ```bash
 cargo build                          # Build all workspace members
-cargo test                           # Full suite from repo root (~636 tests summed; see current-state)
+cargo test                           # Full suite from repo root (~645 tests summed; see current-state)
 cargo test -p forge-engine           # Test single engine
 cargo run                            # Start API on :3000
 cargo run -- session create "demo"   # Test CLI

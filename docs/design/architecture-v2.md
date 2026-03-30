@@ -486,7 +486,7 @@ pub struct Event {
 ```
 rusvel-app (binary, composition root)
 ├── rusvel-cli
-├── rusvel-api (Axum, 141 route chains across 36 handler modules beside lib.rs) ── serves SPA via fallback
+├── rusvel-api (Axum, 153 route chains across 39 handler modules beside lib.rs) ── serves SPA via fallback
 ├── rusvel-tui (Ratatui)
 ├── rusvel-mcp (rmcp, 6 tools)
 │
@@ -596,7 +596,7 @@ rusvel/
 │   ├── dept-support/         ← DepartmentApp for Support [NEW]
 │   ├── dept-infra/           ← DepartmentApp for Infra [NEW]
 │   │
-│   ├── rusvel-api/           ← Axum HTTP: 141 route chains, 36 modules
+│   ├── rusvel-api/           ← Axum HTTP: 153 route chains, 39 modules
 │   ├── rusvel-cli/           ← 3-tier CLI: one-shot (Clap) + REPL (reedline) + dept subcommands
 │   ├── rusvel-tui/           ← TUI dashboard (Ratatui) — wired via --tui flag
 │   ├── rusvel-mcp/           ← MCP server (stdio JSON-RPC, 6 tools)

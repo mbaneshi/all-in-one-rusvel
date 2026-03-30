@@ -30,7 +30,7 @@ RUSVEL is a **hexagonal (ports & adapters)** Rust monorepo: **`rusvel-core`** de
 | **Axum `.route(` lines** | **132** | `rg '\.route\(' crates/rusvel-api/src/lib.rs \| wc -l` |
 | **`rusvel-api` `src/*.rs` modules** | **31** + `lib.rs` | directory listing (handler/feature modules) |
 
-**2026-03-30 refresh (canonical):** [`docs/status/current-state.md`](../status/current-state.md) — **55** workspace members (**`rusvel-pipeline`** added), **295** Rust files under `crates/`, **~69,456** LOC, **141** `.route(` lines, **36** API modules beside `lib.rs`, **22** port traits in `ports.rs`.
+**2026-03-30 refresh (canonical):** [`docs/status/current-state.md`](../status/current-state.md) — **55** workspace members (**`rusvel-pipeline`** added), **301** Rust files under `crates/`, **~73,058** LOC, **153** `.route(` lines, **39** API modules beside `lib.rs`, **22** port traits in `ports.rs`, **114** `pub struct` / `pub enum` in `domain.rs`, **~645** tests (workspace sum).
 
 **Workspace growth vs. older docs:** The 2026-03-28 tree had **54** members (webhook, cron, channel, `dept-messaging`, etc.). The next jump was **`rusvel-pipeline`**; always use **`current-state.md` §1** for live planning.
 

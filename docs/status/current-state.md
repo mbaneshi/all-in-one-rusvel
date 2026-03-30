@@ -28,10 +28,10 @@ Use the same host environment as normal development. Run `cargo test` from the *
 | **Workspace members** | Packages listed in `[workspace].members` in root `Cargo.toml` — `cargo metadata --no-deps` count. |
 | **Rust LOC** | Total lines of `*.rs` under `crates/` only (excludes `frontend/`). |
 | **Rust source files** | Count of `*.rs` files under `crates/`. |
-| **Tests (count)** | Sum of `running N tests` lines from `cargo test --workspace` output (~636). |
-| **Test targets** | Approximate count of compiled test executables from `cargo test --workspace --no-run` (count `^  Executable` lines in output; **~101** as of [verification-log-2026-03-30.md](verification-log-2026-03-30.md)). Older docs (~30) referred to `[[test]]` / crate-level counts only. |
-| **HTTP route chains** | Lines with `.route(` in `crates/rusvel-api/src/lib.rs` main API router (**141**). One line can register multiple methods (`get().post()`). |
-| **API modules** | `*.rs` files in `crates/rusvel-api/src/` excluding `lib.rs` (**36**). |
+| **Tests (count)** | Sum of `running N tests` lines from `cargo test --workspace` output (~645). |
+| **Test targets** | Approximate count of compiled test executables from `cargo test --workspace --no-run` (count `^  Executable` lines in output; **~102** as of [verification-log-2026-03-30.md](verification-log-2026-03-30.md)). Older docs (~30) referred to `[[test]]` / crate-level counts only. |
+| **HTTP route chains** | Lines with `.route(` in `crates/rusvel-api/src/lib.rs` main API router (**153**). One line can register multiple methods (`get().post()`). |
+| **API modules** | `*.rs` files in `crates/rusvel-api/src/` excluding `lib.rs` (**39**). |
 | **Port traits** | `pub trait` entries in `crates/rusvel-core/src/ports.rs` (**22**, including five `*Store` subtraits, `ChannelPort`, `BrowserPort`, `RusvelBasePort`). `DepartmentApp` lives under `department/`. |
 
 ---
@@ -41,14 +41,14 @@ Use the same host environment as normal development. Run `cargo test` from the *
 | Metric | Count |
 |--------|------:|
 | Workspace members | 55 |
-| Rust lines of code (crates/*.rs) | ~69,456 |
-| Rust source files (crates/) | 295 |
-| Tests (approx., `cargo test`) | ~636 (0 failures, full workspace from repo root; sum of `running N tests` lines) |
-| Test targets (approx., `cargo test --no-run`) | ~101 |
-| HTTP route chains (`lib.rs` `.route(`) | 141 |
-| API handler modules (`rusvel-api/src/*.rs` excl. lib) | 36 |
+| Rust lines of code (crates/*.rs) | ~73,058 |
+| Rust source files (crates/) | 301 |
+| Tests (approx., `cargo test`) | ~645 (0 failures, full workspace from repo root; sum of `running N tests` lines) |
+| Test targets (approx., `cargo test --no-run`) | ~102 |
+| HTTP route chains (`lib.rs` `.route(`) | 153 |
+| API handler modules (`rusvel-api/src/*.rs` excl. lib) | 39 |
 | Port traits (`rusvel-core` `ports.rs`) | 22 |
-| `pub struct` / `pub enum` in `domain.rs` | 112 |
+| `pub struct` / `pub enum` in `domain.rs` | 114 |
 | Departments (booted `DepartmentApp`) | 14 |
 | Department crates (dept-*) | 14 |
 | Engines | 13 (6 wired + 7 skeletons, all via `DepartmentApp`) |

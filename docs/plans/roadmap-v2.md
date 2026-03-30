@@ -14,7 +14,7 @@
 - forge-engine + code-engine + content-engine + harvest-engine + flow-engine + gtm-engine (all wired)
 - 14 dept-* crates implementing DepartmentApp trait (ADR-014, EngineKind removed)
 - AgentRuntime with run_streaming() + 22+ registered tools (10 built-in incl. tool_search + 12 engine)
-- Surfaces: CLI (3-tier: one-shot + REPL + TUI), API (141 route chains across 36 modules), Web (SvelteKit, 12+ pages), MCP (6 tools)
+- Surfaces: CLI (3-tier: one-shot + REPL + TUI), API (153 route chains across 39 modules), Web (SvelteKit, 12+ pages), MCP (6 tools)
 - 7 skeleton engines (finance, product, growth, distro, legal, support, infra)
 
 **Proves:** Ports + adapters + session hierarchy + job queue + events + streaming LLM.

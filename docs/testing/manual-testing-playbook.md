@@ -47,7 +47,7 @@ cargo build
 cargo test
 ```
 
-**Expected:** ~636 tests pass (workspace sum), 0 failures. Some tests may be ignored (PTY tests in sandboxed environments).
+**Expected:** ~645 tests pass (workspace sum), 0 failures. Some tests may be ignored (PTY tests in sandboxed environments).
 
 ### 1.3 Required services
 
@@ -1624,7 +1624,7 @@ curl -s -X DELETE http://localhost:3000/api/cron/<id>
 cargo test
 ```
 
-**Expected:** ~636 tests, 0 failures.
+**Expected:** ~645 tests, 0 failures.
 
 ```bash
 # Individual crates
@@ -1707,7 +1707,7 @@ Quick pass to verify everything works after a build. Run these in order:
 | # | Command | Pass if |
 |---|---------|---------|
 | 1 | `cargo build` | Compiles without errors |
-| 2 | `cargo test` | ~636 tests pass |
+| 2 | `cargo test` | ~645 tests pass |
 | 3 | `cargo run -- --help` | Shows help text with all subcommands |
 | 4 | `cargo run -- session create smoke-test` | Prints session UUID |
 | 5 | `cargo run -- session list` | Shows the smoke-test session |
