@@ -22,13 +22,16 @@
 	let resizeTimer: ReturnType<typeof setTimeout> | undefined = undefined;
 
 	function postResize(rows: number, cols: number) {
-		if (rows <= 0 || cols <= 0) return;
+		// FitAddon can report 0×0 before layout settles; still notify PTY so SIGWINCH redraws the prompt
+		// (WS subscribers miss pre-connect broadcast output — resize is the usual fix).
+		const r = rows > 0 ? rows : 24;
+		const c = cols > 0 ? cols : 80;
 		const base = resolveHttpOrigin();
 		const url = `${base}/api/terminal/pane/${encodeURIComponent(paneId)}/resize`;
 		fetch(url, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ rows, cols })
+			body: JSON.stringify({ rows: r, cols: c })
 		}).catch(() => {});
 	}
 

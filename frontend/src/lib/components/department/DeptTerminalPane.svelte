@@ -53,7 +53,7 @@
 	});
 </script>
 
-<div class="h-full overflow-auto p-2">
+<div class="flex h-full min-h-0 min-w-0 flex-1 flex-col p-2">
 	{#if !sessionId}
 		<p class="text-[11px] text-muted-foreground">Select a session to use the terminal.</p>
 	{:else if terminalLoading}
@@ -61,8 +61,10 @@
 	{:else if terminalErr}
 		<p class="text-[11px] text-red-500">{terminalErr}</p>
 	{:else if terminalPaneId}
-		{#key terminalPaneId}
-			<DeptTerminal paneId={terminalPaneId} />
-		{/key}
+		<div class="min-h-0 min-w-0 flex-1">
+			{#key terminalPaneId}
+				<DeptTerminal paneId={terminalPaneId} />
+			{/key}
+		</div>
 	{/if}
 </div>
