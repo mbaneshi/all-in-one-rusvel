@@ -725,10 +725,12 @@ pub async fn dept_conversations(
 ) -> Result<Json<Vec<ConversationSummary>>, (StatusCode, String)> {
     validate_dept(&state, &dept)?;
     let namespace = msg_namespace(&dept);
+    let mut df = rusvel_core::domain::ObjectFilter::default();
+    df.limit = Some(5000);
     let all = state
         .storage
         .objects()
-        .list(&namespace, rusvel_core::domain::ObjectFilter::default())
+        .list(&namespace, df)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
@@ -824,11 +826,11 @@ async fn load_namespaced_history(
     conversation_id: &str,
     limit: usize,
 ) -> rusvel_core::error::Result<Vec<ChatMessage>> {
-    let all = storage
-        .objects()
-        .list(namespace, rusvel_core::domain::ObjectFilter::default())
-        .await?;
-    let mut msgs: Vec<ChatMessage> = all
+    let mut filter = rusvel_core::domain::ObjectFilter::default();
+    filter.conversation_id = Some(conversation_id.to_string());
+    filter.limit = Some((limit as u32).saturating_mul(4).max(100).min(10_000));
+    let rows = storage.objects().list(namespace, filter).await?;
+    let mut msgs: Vec<ChatMessage> = rows
         .into_iter()
         .filter_map(|v| serde_json::from_value(v).ok())
         .filter(|m: &ChatMessage| m.conversation_id == conversation_id)

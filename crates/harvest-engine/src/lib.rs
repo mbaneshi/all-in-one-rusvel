@@ -538,6 +538,7 @@ impl HarvestEngine {
     /// List persisted proposals for a session (`kind`: `"proposal"`).
     pub async fn get_proposals(&self, session_id: &SessionId) -> Result<Vec<Proposal>> {
         let filter = ObjectFilter {
+            conversation_id: None,
             session_id: Some(*session_id),
             tags: vec![],
             limit: None,

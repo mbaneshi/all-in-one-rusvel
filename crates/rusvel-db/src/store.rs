@@ -834,6 +834,14 @@ impl ObjectStore for Database {
                 idx += 1;
             }
 
+            if let Some(ref conv) = filter.conversation_id {
+                sql.push_str(&format!(
+                    " AND json_extract(data, '$.conversation_id') = ?{idx}"
+                ));
+                param_values.push(Box::new(conv.clone()));
+                idx += 1;
+            }
+
             if let Some(limit) = filter.limit {
                 sql.push_str(&format!(" LIMIT ?{idx}"));
                 param_values.push(Box::new(i64::from(limit)));
@@ -2156,6 +2164,7 @@ mod tests {
             &db,
             "item",
             ObjectFilter {
+                conversation_id: None,
                 limit: Some(2),
                 ..Default::default()
             },
@@ -2200,6 +2209,7 @@ mod tests {
             &db,
             "content",
             ObjectFilter {
+                conversation_id: None,
                 session_id: Some(sid_a),
                 ..Default::default()
             },
@@ -2213,6 +2223,7 @@ mod tests {
             &db,
             "content",
             ObjectFilter {
+                conversation_id: None,
                 session_id: Some(sid_b),
                 ..Default::default()
             },

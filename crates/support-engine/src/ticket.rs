@@ -108,6 +108,7 @@ impl TicketManager {
 
     pub async fn list_tickets(&self, session_id: SessionId) -> Result<Vec<Ticket>> {
         let filter = ObjectFilter {
+            conversation_id: None,
             session_id: Some(session_id),
             ..Default::default()
         };

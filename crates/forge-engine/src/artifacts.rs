@@ -52,6 +52,7 @@ pub async fn list_artifacts(
         .list(
             ARTIFACT_KIND,
             ObjectFilter {
+                conversation_id: None,
                 session_id: Some(*session_id),
                 limit: Some(limit),
                 ..Default::default()

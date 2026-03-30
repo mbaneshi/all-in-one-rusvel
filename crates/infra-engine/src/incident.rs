@@ -105,6 +105,7 @@ impl IncidentManager {
 
     pub async fn list_incidents(&self, session_id: SessionId) -> Result<Vec<Incident>> {
         let filter = ObjectFilter {
+            conversation_id: None,
             session_id: Some(session_id),
             ..Default::default()
         };

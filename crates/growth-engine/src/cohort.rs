@@ -76,6 +76,7 @@ impl CohortManager {
 
     pub async fn list_cohorts(&self, session_id: SessionId) -> Result<Vec<Cohort>> {
         let filter = ObjectFilter {
+            conversation_id: None,
             session_id: Some(session_id),
             ..Default::default()
         };

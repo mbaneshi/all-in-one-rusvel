@@ -301,6 +301,7 @@ async fn dept_list(
 ) -> Result<()> {
     let objects = storage.objects();
     let filter = ObjectFilter {
+        conversation_id: None,
         limit: Some(limit as u32),
         ..Default::default()
     };
@@ -363,6 +364,7 @@ async fn dept_events(meta: DeptMeta, storage: Arc<dyn StoragePort>, limit: usize
     let objects = storage.objects();
     // Events are stored in the "events" collection; filter by prefix
     let filter = ObjectFilter {
+        conversation_id: None,
         limit: Some((limit * 5) as u32),
         ..Default::default()
     };

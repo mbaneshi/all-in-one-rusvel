@@ -1171,6 +1171,8 @@ pub struct HealthStatus {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ObjectFilter {
     pub session_id: Option<SessionId>,
+    /// When set, restricts `chat_message` (and similar) rows where `data.conversation_id` matches.
+    pub conversation_id: Option<String>,
     pub tags: Vec<String>,
     pub limit: Option<u32>,
     pub offset: Option<u32>,

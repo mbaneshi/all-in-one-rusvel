@@ -50,6 +50,7 @@ impl ContentAnalytics {
     /// Get all per-platform metrics for a content item.
     pub async fn get_metrics(&self, content_id: ContentId) -> Result<Vec<(Platform, PostMetrics)>> {
         let filter = ObjectFilter {
+            conversation_id: None,
             session_id: None,
             tags: vec![],
             limit: None,
@@ -79,6 +80,7 @@ impl ContentAnalytics {
     ) -> Result<Vec<(ContentItem, PostMetrics)>> {
         // Load all content items for this session.
         let filter = ObjectFilter {
+            conversation_id: None,
             session_id: Some(*session_id),
             tags: vec![],
             limit: None,

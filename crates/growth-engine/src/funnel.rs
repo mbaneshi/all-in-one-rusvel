@@ -75,6 +75,7 @@ impl FunnelManager {
 
     pub async fn list_stages(&self, session_id: SessionId) -> Result<Vec<FunnelStage>> {
         let filter = ObjectFilter {
+            conversation_id: None,
             session_id: Some(session_id),
             ..Default::default()
         };

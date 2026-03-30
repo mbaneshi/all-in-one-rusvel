@@ -95,6 +95,7 @@ impl MonitorManager {
 
     pub async fn list_checks(&self, session_id: SessionId) -> Result<Vec<HealthCheck>> {
         let filter = ObjectFilter {
+            conversation_id: None,
             session_id: Some(session_id),
             ..Default::default()
         };

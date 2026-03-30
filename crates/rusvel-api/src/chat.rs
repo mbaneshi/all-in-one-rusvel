@@ -201,10 +201,12 @@ pub async fn chat_handler(
 pub async fn list_conversations(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Vec<ConversationSummary>>, (StatusCode, String)> {
+    let mut conv_filter = rusvel_core::domain::ObjectFilter::default();
+    conv_filter.limit = Some(5000);
     let all = state
         .storage
         .objects()
-        .list("chat_message", rusvel_core::domain::ObjectFilter::default())
+        .list("chat_message", conv_filter)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
@@ -270,12 +272,12 @@ async fn load_history(
     conversation_id: &str,
     limit: usize,
 ) -> rusvel_core::error::Result<Vec<ChatMessage>> {
-    let all = storage
-        .objects()
-        .list("chat_message", rusvel_core::domain::ObjectFilter::default())
-        .await?;
+    let mut filter = rusvel_core::domain::ObjectFilter::default();
+    filter.conversation_id = Some(conversation_id.to_string());
+    filter.limit = Some((limit as u32).saturating_mul(4).max(100).min(10_000));
+    let rows = storage.objects().list("chat_message", filter).await?;
 
-    let mut msgs: Vec<ChatMessage> = all
+    let mut msgs: Vec<ChatMessage> = rows
         .into_iter()
         .filter_map(|v| serde_json::from_value::<ChatMessage>(v).ok())
         .filter(|m| m.conversation_id == conversation_id)

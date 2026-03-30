@@ -100,6 +100,7 @@ impl ContractManager {
 
     pub async fn list_contracts(&self, session_id: SessionId) -> Result<Vec<Contract>> {
         let filter = ObjectFilter {
+            conversation_id: None,
             session_id: Some(session_id),
             ..Default::default()
         };

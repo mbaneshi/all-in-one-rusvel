@@ -300,6 +300,7 @@ impl ContentEngine {
         status_filter: Option<ContentStatus>,
     ) -> Result<Vec<ContentItem>> {
         let filter = ObjectFilter {
+            conversation_id: None,
             session_id: Some(*session_id),
             tags: vec![],
             limit: None,

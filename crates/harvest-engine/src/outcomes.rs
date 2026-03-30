@@ -94,6 +94,7 @@ pub async fn list_outcomes(
         .list(
             HARVEST_OUTCOME_KIND,
             ObjectFilter {
+                conversation_id: None,
                 session_id: Some(*session_id),
                 limit: Some(limit),
                 ..Default::default()

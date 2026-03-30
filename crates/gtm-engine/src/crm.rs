@@ -112,6 +112,7 @@ impl CrmManager {
 
     pub async fn list_contacts(&self, session_id: SessionId) -> Result<Vec<Contact>> {
         let filter = ObjectFilter {
+            conversation_id: None,
             session_id: Some(session_id),
             ..Default::default()
         };
@@ -146,6 +147,7 @@ impl CrmManager {
         stage_filter: Option<DealStage>,
     ) -> Result<Vec<Deal>> {
         let filter = ObjectFilter {
+            conversation_id: None,
             session_id: Some(session_id),
             ..Default::default()
         };

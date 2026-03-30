@@ -47,6 +47,7 @@ impl Pipeline {
         stage_filter: Option<&OpportunityStage>,
     ) -> Result<Vec<Opportunity>> {
         let filter = ObjectFilter {
+            conversation_id: None,
             session_id: Some(*session_id),
             tags: Vec::new(),
             limit: None,

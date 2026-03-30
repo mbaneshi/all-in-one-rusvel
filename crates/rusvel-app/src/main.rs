@@ -1572,6 +1572,7 @@ async fn main() -> Result<()> {
             .list(
                 "events",
                 rusvel_core::domain::ObjectFilter {
+                    conversation_id: None,
                     limit: Some(50),
                     ..Default::default()
                 },

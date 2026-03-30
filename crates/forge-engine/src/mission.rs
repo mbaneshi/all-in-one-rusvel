@@ -345,6 +345,7 @@ impl ForgeEngine {
     /// List all goals for a session.
     pub async fn list_goals(&self, session_id: &SessionId) -> Result<Vec<Goal>> {
         let filter = ObjectFilter {
+            conversation_id: None,
             session_id: Some(*session_id),
             ..Default::default()
         };
@@ -513,6 +514,7 @@ impl ForgeEngine {
             .list(
                 KIND,
                 ObjectFilter {
+                    conversation_id: None,
                     session_id: Some(*session_id),
                     limit: Some(64),
                     ..Default::default()

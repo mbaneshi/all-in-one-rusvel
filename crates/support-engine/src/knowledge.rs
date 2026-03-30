@@ -87,6 +87,7 @@ impl KnowledgeManager {
 
     pub async fn list_articles(&self, session_id: SessionId) -> Result<Vec<Article>> {
         let filter = ObjectFilter {
+            conversation_id: None,
             session_id: Some(session_id),
             ..Default::default()
         };

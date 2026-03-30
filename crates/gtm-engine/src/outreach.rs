@@ -170,6 +170,7 @@ impl OutreachManager {
 
     pub async fn list_sequences(&self, session_id: SessionId) -> Result<Vec<OutreachSequence>> {
         let filter = ObjectFilter {
+            conversation_id: None,
             session_id: Some(session_id),
             ..Default::default()
         };
@@ -571,6 +572,7 @@ impl OutreachManager {
 
     pub async fn list_followups(&self, session_id: SessionId) -> Result<Vec<FollowUp>> {
         let filter = ObjectFilter {
+            conversation_id: None,
             session_id: Some(session_id),
             ..Default::default()
         };

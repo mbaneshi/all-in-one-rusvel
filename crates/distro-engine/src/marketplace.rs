@@ -95,6 +95,7 @@ impl MarketplaceManager {
 
     pub async fn list_listings(&self, session_id: SessionId) -> Result<Vec<Listing>> {
         let filter = ObjectFilter {
+            conversation_id: None,
             session_id: Some(session_id),
             ..Default::default()
         };

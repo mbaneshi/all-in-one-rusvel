@@ -54,6 +54,7 @@ pub async fn list_artifacts(
         .list(
             STORE,
             ObjectFilter {
+                conversation_id: None,
                 limit: Some(100),
                 ..Default::default()
             },

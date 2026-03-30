@@ -82,6 +82,7 @@ impl TaxManager {
 
     pub async fn list_estimates(&self, session_id: SessionId) -> Result<Vec<TaxEstimate>> {
         let filter = ObjectFilter {
+            conversation_id: None,
             session_id: Some(session_id),
             ..Default::default()
         };

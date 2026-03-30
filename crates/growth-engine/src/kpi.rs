@@ -77,6 +77,7 @@ impl KpiManager {
 
     pub async fn list_kpis(&self, session_id: SessionId) -> Result<Vec<KpiEntry>> {
         let filter = ObjectFilter {
+            conversation_id: None,
             session_id: Some(session_id),
             ..Default::default()
         };

@@ -98,6 +98,7 @@ impl ContentCalendar {
     /// List all scheduled (not-yet-published) posts for a session.
     pub async fn list_scheduled(&self, session_id: &SessionId) -> Result<Vec<ScheduledPost>> {
         let filter = ObjectFilter {
+            conversation_id: None,
             session_id: Some(*session_id),
             tags: vec![],
             limit: None,

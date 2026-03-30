@@ -85,6 +85,7 @@ impl NpsManager {
 
     pub async fn list_responses(&self, session_id: SessionId) -> Result<Vec<NpsResponse>> {
         let filter = ObjectFilter {
+            conversation_id: None,
             session_id: Some(session_id),
             ..Default::default()
         };

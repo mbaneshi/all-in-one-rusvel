@@ -176,6 +176,7 @@ impl InvoiceManager {
         status_filter: Option<InvoiceStatus>,
     ) -> Result<Vec<Invoice>> {
         let filter = ObjectFilter {
+            conversation_id: None,
             session_id: Some(session_id),
             ..Default::default()
         };
