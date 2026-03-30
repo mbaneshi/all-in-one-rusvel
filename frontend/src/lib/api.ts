@@ -902,6 +902,44 @@ export async function getHarvestPipeline(sessionId: string): Promise<unknown> {
 	return request(`/api/dept/harvest/pipeline?${sp}`);
 }
 
+/** `POST /api/dept/harvest/scan` — sources: mock | upwork | freelancer | cdp; `query` = RSS terms or CDP listing URL. */
+export interface HarvestScanRequest {
+	session_id: string;
+	sources: string[];
+	query: string;
+	cdp_extract_js?: string | null;
+	cdp_endpoint?: string | null;
+}
+
+export async function postHarvestScan(body: HarvestScanRequest): Promise<OpportunityRow[]> {
+	const payload: Record<string, unknown> = {
+		session_id: body.session_id,
+		sources: body.sources,
+		query: body.query
+	};
+	const js = body.cdp_extract_js?.trim();
+	if (js) payload.cdp_extract_js = js;
+	const ep = body.cdp_endpoint?.trim();
+	if (ep) payload.cdp_endpoint = ep;
+	return request<OpportunityRow[]>('/api/dept/harvest/scan', {
+		method: 'POST',
+		body: JSON.stringify(payload)
+	});
+}
+
+export async function getBrowserStatus(): Promise<{ connected: boolean }> {
+	return request('/api/browser/status');
+}
+
+export async function postBrowserConnect(
+	endpoint: string
+): Promise<{ ok: boolean; endpoint: string }> {
+	return request('/api/browser/connect', {
+		method: 'POST',
+		body: JSON.stringify({ endpoint: endpoint.trim() })
+	});
+}
+
 /** `POST /api/forge/pipeline` — cross-engine harvest → content pipeline (S-042). */
 export interface ForgePipelineDef {
 	steps?: ('scan' | 'score' | 'propose' | 'draft_content')[];
