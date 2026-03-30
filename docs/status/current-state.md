@@ -29,7 +29,7 @@ Use the same host environment as normal development. Run `cargo test` from the *
 | **Rust LOC** | Total lines of `*.rs` under `crates/` only (excludes `frontend/`). |
 | **Rust source files** | Count of `*.rs` files under `crates/`. |
 | **Tests (count)** | Sum of `running N tests` lines from `cargo test --workspace` output (~636). |
-| **Test targets** | Approximate count of compiled test executables from `cargo test --no-run` (e.g. ~61); differs from **test binaries** phrasing used in older docs (~30 referred to `[[test]]` / crate-level counts). |
+| **Test targets** | Approximate count of compiled test executables from `cargo test --workspace --no-run` (count `^  Executable` lines in output; **~101** as of [verification-log-2026-03-30.md](verification-log-2026-03-30.md)). Older docs (~30) referred to `[[test]]` / crate-level counts only. |
 | **HTTP route chains** | Lines with `.route(` in `crates/rusvel-api/src/lib.rs` main API router (**141**). One line can register multiple methods (`get().post()`). |
 | **API modules** | `*.rs` files in `crates/rusvel-api/src/` excluding `lib.rs` (**36**). |
 | **Port traits** | `pub trait` entries in `crates/rusvel-core/src/ports.rs` (**22**, including five `*Store` subtraits, `ChannelPort`, `BrowserPort`, `RusvelBasePort`). `DepartmentApp` lives under `department/`. |

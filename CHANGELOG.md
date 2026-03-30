@@ -62,7 +62,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [0.1.0] — 2026-03-22 → 2026-03-28
 
-First working release — 190 commits across 7 days. 54 crates, ~62K lines of Rust, 14 departments, ~554 tests.
+First working release — 190 commits across 7 days. 54 crates, ~62K lines of Rust, 14 departments, ~554 tests. *(Counts as of this release; for the current tree see [`docs/status/current-state.md`](docs/status/current-state.md).)*
 
 ### Architecture
 - Hexagonal ports & adapters — 21 port traits in `rusvel-core`
