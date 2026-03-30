@@ -1,7 +1,21 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { defineConfig, devices } from '@playwright/test';
 
 const API_PORT = 3000;
 const DEV_PORT = 5173;
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const isCi = process.env.CI === 'true';
+
+const apiWebServer = {
+	command: isCi ? path.join(repoRoot, 'target', 'debug', 'rusvel') : 'cargo run',
+	cwd: isCi ? repoRoot : '..',
+	port: API_PORT,
+	timeout: isCi ? 60_000 : 120_000,
+	reuseExistingServer: true
+};
 
 export default defineConfig({
 	globalSetup: './tests/global-setup.ts',
@@ -41,13 +55,7 @@ export default defineConfig({
 	],
 
 	webServer: [
-		{
-			command: 'cargo run',
-			cwd: '..',
-			port: API_PORT,
-			timeout: 120_000,
-			reuseExistingServer: true
-		},
+		apiWebServer,
 		{
 			command: 'pnpm dev',
 			port: DEV_PORT,

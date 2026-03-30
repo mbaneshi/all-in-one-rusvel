@@ -52,4 +52,5 @@ cargo bench -p rusvel-app --bench boot
 
 ## CI
 
-See `.github/workflows/ci.yml`: **llvm-tools-preview**, **cargo-llvm-cov**, same **protoc** install as build, then tests run under coverage with the floor above.
+See `.github/workflows/ci.yml`: **llvm-tools-preview**, **cargo-llvm-cov**, same **protoc** install as build, then tests run under coverage with the floor above. Playwright behavioral E2E and prioritized backlog: [roadmap.md](roadmap.md).
+
