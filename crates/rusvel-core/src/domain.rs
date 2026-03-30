@@ -1457,11 +1457,13 @@ pub enum BrowsingMode {
 pub struct FlowDef {
     pub id: crate::id::FlowId,
     pub name: String,
+    #[serde(default)]
     pub description: String,
     pub nodes: Vec<FlowNodeDef>,
     pub connections: Vec<FlowConnectionDef>,
     #[serde(default)]
     pub variables: std::collections::HashMap<String, String>,
+    #[serde(default = "default_metadata")]
     pub metadata: serde_json::Value,
 }
 

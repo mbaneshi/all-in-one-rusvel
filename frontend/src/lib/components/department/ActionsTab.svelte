@@ -1,6 +1,8 @@
 <script lang="ts">
-	import { pendingCommand } from '$lib/stores';
-	import { streamCapability } from '$lib/api';
+	import { goto } from '$app/navigation';
+	import { get } from 'svelte/store';
+	import { toast } from 'svelte-sonner';
+	import { activeSession, pendingCommand } from '$lib/stores';
 
 	let {
 		dept,
@@ -15,7 +17,12 @@
 	let showCapability = $state(false);
 	let capabilityInput = $state('');
 
-	function sendQuickAction(prompt: string) {
+	async function sendQuickAction(prompt: string) {
+		if (!get(activeSession)) {
+			toast.error('Select a session in the top bar to run quick actions.');
+			return;
+		}
+		await goto(`/dept/${encodeURIComponent(dept)}/chat`);
 		pendingCommand.set({ prompt });
 	}
 </script>
@@ -73,5 +80,14 @@
 
 	{#if quickActions.length === 0}
 		<p class="text-center text-[10px] text-muted-foreground py-2">No quick actions configured.</p>
+	{/if}
+
+	{#if dept === 'flow'}
+		<a
+			href="/flows"
+			class="mt-2 block rounded-lg border border-dashed border-border px-3 py-2 text-center text-[10px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+		>
+			Visual DAG builder (n8n-style) → <span class="font-mono text-[9px]">/flows</span>
+		</a>
 	{/if}
 </div>

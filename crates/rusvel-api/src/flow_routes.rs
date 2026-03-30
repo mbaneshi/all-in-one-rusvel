@@ -6,6 +6,7 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use serde::Deserialize;
+use uuid::Uuid;
 
 use flow_engine::cross_engine_handoff_template;
 use rusvel_core::domain::FlowDef;
@@ -39,7 +40,7 @@ pub async fn create_flow(
     Json(mut flow): Json<FlowDef>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, String)> {
     let engine = flow_engine(&state)?;
-    if flow.id == FlowId::default() {
+    if *flow.id.as_uuid() == Uuid::nil() {
         flow.id = FlowId::new();
     }
     let id = engine.save_flow(&flow).await.map_err(engine_err)?;

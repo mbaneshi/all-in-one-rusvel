@@ -1530,6 +1530,38 @@ export interface FlowDef {
 	metadata?: Record<string, unknown>;
 }
 
+/** Server treats nil UUID as “assign new id” on POST /api/flows. */
+export const FLOW_CREATE_ID_PLACEHOLDER = '00000000-0000-0000-0000-000000000000';
+
+/** Build a valid `FlowDef` for create from partial JSON or a visual editor draft. */
+export function normalizeFlowForCreate(
+	input: Partial<FlowDef> & Pick<FlowDef, 'name' | 'nodes' | 'connections'>
+): FlowDef {
+	const nodes = (input.nodes ?? []).map((n, i) => ({
+		id: n.id?.trim() || crypto.randomUUID(),
+		node_type: n.node_type?.trim() || 'agent',
+		name: (n.name?.trim() || `Node ${i + 1}`) as string,
+		parameters: n.parameters ?? {},
+		position: n.position ?? [120 + (i % 5) * 48, 80 + Math.floor(i / 5) * 72],
+		metadata: n.metadata ?? {}
+	}));
+	const connections = (input.connections ?? []).map((c) => ({
+		source_node: c.source_node,
+		target_node: c.target_node,
+		source_output: c.source_output?.trim() || 'main',
+		target_input: c.target_input?.trim() || 'main'
+	}));
+	return {
+		id: input.id?.trim() || FLOW_CREATE_ID_PLACEHOLDER,
+		name: input.name.trim() || 'Untitled flow',
+		description: input.description?.trim() ?? '',
+		nodes,
+		connections,
+		variables: input.variables ?? {},
+		metadata: input.metadata ?? {}
+	};
+}
+
 export type FlowNodeStatus = 'Pending' | 'Running' | 'Succeeded' | 'Failed' | 'Skipped';
 
 export interface FlowNodeResult {

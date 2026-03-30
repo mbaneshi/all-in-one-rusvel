@@ -7,10 +7,14 @@
 		runFlow,
 		getFlowNodeTypes,
 		getFlowExecutionPanes,
+		normalizeFlowForCreate,
 		type FlowDef,
 		type FlowExecution,
+		type FlowNodeDef,
+		type FlowConnectionDef,
 		type FlowTerminalPane
 	} from '$lib/api';
+	import FlowDagBuilder from '$lib/components/flow/FlowDagBuilder.svelte';
 	import { toast } from 'svelte-sonner';
 	import Button from '$lib/components/ui/Button.svelte';
 	import DeptTerminal from '$lib/components/DeptTerminal.svelte';
@@ -19,7 +23,12 @@
 	let nodeTypes: string[] = $state([]);
 	let loading = $state(true);
 	let showCreate = $state(false);
+	let createMode = $state<'visual' | 'json'>('visual');
 	let newFlowJson = $state('');
+	let visualName = $state('my-flow');
+	let visualDescription = $state('');
+	let visualNodes = $state<FlowNodeDef[]>([]);
+	let visualConnections = $state<FlowConnectionDef[]>([]);
 	let selectedExecution: FlowExecution | null = $state(null);
 	let runningFlowId = $state('');
 	let executionPanes: FlowTerminalPane[] = $state([]);
@@ -44,13 +53,45 @@
 		}
 	});
 
+	function resetCreateForm() {
+		newFlowJson = '';
+		visualName = 'my-flow';
+		visualDescription = '';
+		visualNodes = [];
+		visualConnections = [];
+		createMode = 'visual';
+	}
+
 	async function handleCreate() {
 		try {
-			const parsed = JSON.parse(newFlowJson);
-			await createFlow(parsed);
+			if (createMode === 'json') {
+				const parsed = JSON.parse(newFlowJson || '{}') as Partial<FlowDef>;
+				const body = normalizeFlowForCreate({
+					name: parsed.name ?? 'Untitled flow',
+					description: parsed.description,
+					nodes: parsed.nodes ?? [],
+					connections: parsed.connections ?? [],
+					variables: parsed.variables,
+					metadata: parsed.metadata,
+					id: parsed.id
+				});
+				await createFlow(body);
+			} else {
+				if (!visualName.trim()) {
+					toast.error('Enter a flow name');
+					return;
+				}
+				const body = normalizeFlowForCreate({
+					name: visualName.trim(),
+					description: visualDescription,
+					nodes: visualNodes,
+					connections: visualConnections
+				});
+				await createFlow(body);
+			}
 			flows = await getFlows();
 			showCreate = false;
-			newFlowJson = '';
+			resetCreateForm();
 			toast.success('Flow created');
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'Failed to create flow');
@@ -122,20 +163,84 @@
 				{/if}
 			</p>
 		</div>
-		<Button onclick={() => (showCreate = !showCreate)}>
+		<Button
+			onclick={() => {
+				showCreate = !showCreate;
+				if (showCreate) resetCreateForm();
+			}}
+		>
 			{showCreate ? 'Cancel' : 'New Flow'}
 		</Button>
 	</div>
 
 	{#if showCreate}
-		<div class="rounded-lg border border-border bg-card p-4 space-y-3">
-			<p class="text-sm font-medium">Create Flow (JSON)</p>
-			<textarea
-				bind:value={newFlowJson}
-				rows="12"
-				class="w-full rounded-md border border-border bg-background p-3 font-mono text-xs"
-				placeholder={`{\n  "name": "my-flow",\n  "description": "...",\n  "nodes": [...],\n  "connections": [...]\n}`}
-			></textarea>
+		<div class="rounded-lg border border-border bg-card p-4 space-y-4">
+			<div class="flex flex-wrap items-center gap-2">
+				<p class="text-sm font-medium">New flow</p>
+				<div class="flex rounded-lg border border-border p-0.5 text-xs">
+					<button
+						type="button"
+						class="rounded-md px-2 py-1 transition-colors {createMode === 'visual'
+							? 'bg-primary text-primary-foreground'
+							: 'text-muted-foreground hover:text-foreground'}"
+						onclick={() => (createMode = 'visual')}
+					>
+						Visual builder
+					</button>
+					<button
+						type="button"
+						class="rounded-md px-2 py-1 transition-colors {createMode === 'json'
+							? 'bg-primary text-primary-foreground'
+							: 'text-muted-foreground hover:text-foreground'}"
+						onclick={() => (createMode = 'json')}
+					>
+						JSON
+					</button>
+				</div>
+			</div>
+
+			{#if createMode === 'visual'}
+				<div class="grid gap-3 sm:grid-cols-2">
+					<label class="space-y-1">
+						<span class="text-[10px] font-medium uppercase text-muted-foreground">Name</span>
+						<input
+							type="text"
+							bind:value={visualName}
+							class="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+						/>
+					</label>
+					<label class="space-y-1 sm:col-span-2">
+						<span class="text-[10px] font-medium uppercase text-muted-foreground">Description</span>
+						<input
+							type="text"
+							bind:value={visualDescription}
+							class="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+							placeholder="Optional"
+						/>
+					</label>
+				</div>
+				<FlowDagBuilder
+					nodeTypeOptions={nodeTypes.length > 0 ? nodeTypes : ['agent', 'code', 'condition']}
+					bind:flowNodes={visualNodes}
+					bind:flowConnections={visualConnections}
+				/>
+				<p class="text-[10px] text-muted-foreground">
+					n8n-style canvas: add typed nodes, drag to arrange, connect right handle → left handle. Empty graph
+					is allowed.
+				</p>
+			{:else}
+				<p class="text-xs text-muted-foreground">
+					Paste a partial definition — missing <code class="rounded bg-muted px-1">id</code> /
+					<code class="rounded bg-muted px-1">metadata</code> are filled automatically. Use nil flow id for
+					new flows.
+				</p>
+				<textarea
+					bind:value={newFlowJson}
+					rows="12"
+					class="w-full rounded-md border border-border bg-background p-3 font-mono text-xs"
+					placeholder={`{\n  "id": "00000000-0000-0000-0000-000000000000",\n  "name": "my-flow",\n  "description": "",\n  "nodes": [],\n  "connections": []\n}`}
+				></textarea>
+			{/if}
 			<Button onclick={handleCreate}>Create</Button>
 		</div>
 	{/if}
