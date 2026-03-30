@@ -17,6 +17,9 @@ export async function refreshPendingApprovalCount(): Promise<void> {
 export const sessions = writable<SessionSummary[]>([]);
 export const activeSession = writable<SessionSummary | null>(null);
 export const sidebarOpen = writable(false);
+
+/** When true and the icon rail is expanded, department links are hidden behind one control (less vertical scroll). */
+export const iconRailDeptsCollapsed = writable(false);
 export const panelOpen = writable(true);
 export const sidebarWidth = writable(256);
 export const panelWidth = writable(288);

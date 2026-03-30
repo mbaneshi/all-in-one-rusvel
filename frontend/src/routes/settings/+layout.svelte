@@ -50,6 +50,6 @@
 	</div>
 </div>
 
-<div class="mx-auto max-w-4xl px-4 py-6 pb-20 sm:px-6">
+<div class="mx-auto max-w-4xl px-4 py-6 pb-32 sm:px-6">
 	{@render children()}
 </div>

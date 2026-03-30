@@ -213,10 +213,15 @@ body {
 	outline-offset: 2px;
 }
 
+/* Reserve space for vertical scrollbar so layouts don’t shift; main content stays scrollable. */
+.rusvel-main-scroll {
+	scrollbar-gutter: stable;
+}
+
 /* ── Scrollbar styling (dark) ── */
 ::-webkit-scrollbar {
-	width: 6px;
-	height: 6px;
+	width: 10px;
+	height: 10px;
 }
 ::-webkit-scrollbar-track {
 	background: transparent;
