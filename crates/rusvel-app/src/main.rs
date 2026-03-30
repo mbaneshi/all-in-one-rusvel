@@ -207,6 +207,44 @@ async fn load_event_triggers_from_store(
     Ok(())
 }
 
+async fn stamp_job_approval_terminal_links(
+    storage: &Arc<dyn StoragePort>,
+    terminal: &Arc<dyn rusvel_core::ports::TerminalPort>,
+    job_id: &rusvel_core::id::JobId,
+    session_id: &SessionId,
+    dept_id: &str,
+) {
+    use rusvel_core::terminal::PaneSource;
+
+    let Ok(panes) = terminal.list_panes_for_session(session_id).await else {
+        return;
+    };
+    let Some(p) = panes.iter().find(|p| {
+        matches!(&p.source, PaneSource::Department(d) if d.as_str() == dept_id)
+    }) else {
+        return;
+    };
+    let Ok(Some(mut job)) = storage.jobs().get(job_id).await else {
+        return;
+    };
+    if job.metadata.as_object().is_none() {
+        job.metadata = serde_json::json!({});
+    }
+    let Some(m) = job.metadata.as_object_mut() else {
+        return;
+    };
+    m.insert(
+        "terminal_pane_id".into(),
+        serde_json::json!(p.id.to_string()),
+    );
+    m.insert(
+        "terminal_window_id".into(),
+        serde_json::json!(p.window_id.to_string()),
+    );
+    m.insert("terminal_dept_id".into(), serde_json::json!(dept_id));
+    let _ = storage.jobs().update(&job).await;
+}
+
 async fn seed_defaults(storage: &Arc<dyn StoragePort>) -> Result<()> {
     let objects = storage.objects();
     let empty_filter = ObjectFilter::default();
@@ -1081,6 +1119,7 @@ async fn main() -> Result<()> {
     let forge_worker = forge.clone();
     let browser_for_jobs: Arc<dyn rusvel_core::ports::BrowserPort> = browser_port.clone();
     let terminal_for_jobs = terminal_for_flow.clone();
+    let storage_for_jobs: Arc<dyn StoragePort> = db.clone() as Arc<dyn StoragePort>;
 
     let db_for_job_sweep = db.clone();
     let mut worker_rx = shutdown_rx.clone();
@@ -1233,7 +1272,19 @@ async fn main() -> Result<()> {
                                         };
                                         match job_port.hold_for_approval(&job_id, job_result).await
                                         {
-                                            Ok(()) => Ok(None),
+                                            Ok(()) => {
+                                                if let Some(ref t) = terminal_for_jobs {
+                                                    stamp_job_approval_terminal_links(
+                                                        &storage_for_jobs,
+                                                        t,
+                                                        &job_id,
+                                                        &sid,
+                                                        "harvest",
+                                                    )
+                                                    .await;
+                                                }
+                                                Ok(None)
+                                            }
                                             Err(e) => Err(e),
                                         }
                                     }
@@ -1497,7 +1548,19 @@ async fn main() -> Result<()> {
                                         job_result,
                                     ),
                                 ) => match job_port.hold_for_approval(&job_id, job_result).await {
-                                    Ok(()) => Ok(None),
+                                    Ok(()) => {
+                                        if let Some(ref t) = terminal_for_jobs {
+                                            stamp_job_approval_terminal_links(
+                                                &storage_for_jobs,
+                                                t,
+                                                &job_id,
+                                                &job.session_id,
+                                                "gtm",
+                                            )
+                                            .await;
+                                        }
+                                        Ok(None)
+                                    }
                                     Err(e) => Err(e),
                                 },
                                 Ok(gtm_engine::outreach::OutreachSendDispatch::Complete {
@@ -1548,7 +1611,7 @@ async fn main() -> Result<()> {
                                 if let Ok(panes) = term.list_panes_for_session(&sid).await {
                                     if let Some(p) = panes.iter().find(|p| {
                                         matches!(
-                                            p.source,
+                                            &p.source,
                                             rusvel_core::terminal::PaneSource::Shell
                                                 | rusvel_core::terminal::PaneSource::Department(_)
                                         )
