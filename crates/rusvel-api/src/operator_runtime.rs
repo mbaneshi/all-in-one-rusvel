@@ -4,6 +4,7 @@
 //! to affect LLM registration (composition root in `rusvel-app`).
 
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use axum::Json;
 use axum::extract::State;
@@ -128,6 +129,79 @@ pub async fn post_shutdown(
     })))
 }
 
+/// `RUSVEL_ALLOW_REEXEC=1` (or `true` / `yes` / `on`) enables [`post_reexec`] and post-shutdown [`run_reexec_if_pending`].
+pub fn reexec_env_enabled() -> bool {
+    std::env::var("RUSVEL_ALLOW_REEXEC")
+        .ok()
+        .map(|v| {
+            let t = v.trim();
+            t == "1"
+                || t.eq_ignore_ascii_case("true")
+                || t.eq_ignore_ascii_case("yes")
+                || t.eq_ignore_ascii_case("on")
+        })
+        .unwrap_or(false)
+}
+
+/// Re-exec is only offered on Unix when [`reexec_env_enabled`] is true.
+pub fn reexec_offered() -> bool {
+    cfg!(unix) && reexec_env_enabled()
+}
+
+/// `POST /api/system/reexec` — graceful shutdown then replace this process with the same executable and argv (Unix only).
+pub async fn post_reexec(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    if !reexec_offered() {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "re-exec disabled: set RUSVEL_ALLOW_REEXEC=1 on a Unix host (see docs/operators/security-hardening.md)"
+                .into(),
+        ));
+    }
+    let Some(tx) = state.shutdown_tx.as_ref() else {
+        return Err((
+            StatusCode::NOT_IMPLEMENTED,
+            "shutdown is not wired for this server build".into(),
+        ));
+    };
+    state
+        .reexec_pending
+        .store(true, Ordering::SeqCst);
+    let _ = tx.send(true);
+    Ok(Json(json!({
+        "ok": true,
+        "message": "Graceful shutdown started; this process will re-exec with the same argv after the HTTP server stops (Unix + RUSVEL_ALLOW_REEXEC)."
+    })))
+}
+
+/// After the HTTP server has stopped, call from the composition root if this process should `exec` itself.
+pub fn run_reexec_if_pending(reexec_pending: &std::sync::atomic::AtomicBool) {
+    if !reexec_pending.load(Ordering::SeqCst) || !reexec_offered() {
+        return;
+    }
+    tracing::info!("re-exec: replacing process with same argv");
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        let exe = match std::env::current_exe() {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::error!(error = %e, "re-exec: current_exe failed");
+                return;
+            }
+        };
+        let e = std::process::Command::new(exe)
+            .args(std::env::args_os().skip(1))
+            .exec();
+        tracing::error!(error = %e, "re-exec: exec failed");
+    }
+    #[cfg(not(unix))]
+    {
+        tracing::warn!("re-exec requested on non-Unix platform; ignoring");
+    }
+}
+
 /// `GET /api/system/runtime` — in-process effective configuration (no secret values).
 pub async fn get_runtime(
     State(state): State<Arc<AppState>>,
@@ -160,6 +234,10 @@ pub async fn get_runtime(
         .iter()
         .map(|(id, msg)| json!({ "id": id, "error": msg }))
         .collect();
+
+    let reexec_env = reexec_env_enabled();
+    let reexec_unix = cfg!(unix);
+    let reexec_available = reexec_offered();
 
     Ok(Json(json!({
         "process": {
@@ -197,9 +275,15 @@ pub async fn get_runtime(
         },
         "operator_prefs_stored": state.operator_prefs,
         "capabilities": OPERATOR_CAPABILITY_REGISTRY,
+        "reexec": {
+            "env_enabled": reexec_env,
+            "platform_unix": reexec_unix,
+            "available": reexec_available,
+        },
         "notes": {
             "restart": "Env vars and operator prefs affecting LLM bootstrap apply only after process restart.",
-            "shutdown": "POST /api/system/shutdown exits the process when wired (use admin token if API auth is enabled)."
+            "shutdown": "POST /api/system/shutdown exits the process when wired (use admin token if API auth is enabled).",
+            "reexec": "POST /api/system/reexec performs graceful shutdown then replaces this process with the same argv when RUSVEL_ALLOW_REEXEC=1 on Unix (admin token if API auth is enabled). Fragile under cargo run; prefer a supervisor or manual restart."
         }
     })))
 }
