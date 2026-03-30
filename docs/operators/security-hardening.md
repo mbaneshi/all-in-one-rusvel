@@ -64,6 +64,12 @@ If auth is disabled and the server binds outside loopback, startup logs a `rusve
 | `RUSVEL_DB_PATH` | **Not read** by `rusvel-app` — database is `{data_dir}/rusvel.db`. |
 | `RUSVEL_SEED_DEV` | **Not read** by the binary; seed flows in docs are aspirational until implemented. |
 
+## Job worker
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `RUSVEL_JOB_STALE_RUNNING_SECS` | `3600` | On worker startup, `Running` jobs older than this many seconds are marked `Failed`. Set to `0` to disable. |
+
 ## Config vs logging
 
 | Variable / key | Purpose |

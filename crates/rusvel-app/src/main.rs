@@ -1077,9 +1077,32 @@ async fn main() -> Result<()> {
 
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
 
+    let db_for_job_sweep = db.clone();
     let mut worker_rx = shutdown_rx.clone();
     let _job_worker = tokio::spawn(async move {
         let job_port = jobs_for_worker;
+        let stale_secs: u64 = std::env::var("RUSVEL_JOB_STALE_RUNNING_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(3600);
+        if stale_secs > 0 {
+            let dbc = db_for_job_sweep.clone();
+            match tokio::task::spawn_blocking(move || {
+                dbc.sweep_stale_running_jobs(Duration::from_secs(stale_secs))
+            })
+            .await
+            {
+                Ok(Ok(n)) if n > 0 => {
+                    tracing::warn!(
+                        count = n,
+                        "swept stale Running jobs (RUSVEL_JOB_STALE_RUNNING_SECS={stale_secs})"
+                    );
+                }
+                Ok(Err(e)) => tracing::error!(error = %e, "stale job sweep failed"),
+                Err(e) => tracing::error!(error = %e, "stale job sweep task failed"),
+                _ => {}
+            }
+        }
         loop {
             match job_port.dequeue(&[]).await {
                 Ok(Some(job)) => {
@@ -1146,10 +1169,9 @@ async fn main() -> Result<()> {
                                     }
                                 }
                             } else {
-                                Ok(Some(JobResult {
-                                    output: serde_json::json!({"error": "invalid job payload: missing content_id or platform"}),
-                                    metadata: serde_json::json!({"engine": "content"}),
-                                }))
+                                Err(rusvel_core::error::RusvelError::Validation(
+                                    "invalid job payload: missing content_id or platform".into(),
+                                ))
                             }
                         }
                         JobKind::HarvestScan => {
@@ -1409,10 +1431,10 @@ async fn main() -> Result<()> {
                         }
                         _ => {
                             tracing::warn!(job_id = %job_id, kind = ?job.kind, "Unknown job kind");
-                            Ok(Some(JobResult {
-                                output: serde_json::json!({"action": "unknown", "kind": format!("{:?}", job.kind)}),
-                                metadata: serde_json::json!({}),
-                            }))
+                            Err(rusvel_core::error::RusvelError::Validation(format!(
+                                "unknown job kind: {:?}",
+                                job.kind
+                            )))
                         }
                     };
 

@@ -110,7 +110,7 @@ fn cost_events_spend_snapshot_inner(db: &Connection) -> CostEventsSpendSnapshot 
 }
 
 use chrono::{DateTime, Utc};
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 
 use rusvel_core::error::RusvelError;
 use rusvel_core::ports::*;
@@ -236,6 +236,42 @@ impl Database {
     ) -> rusvel_core::Result<R> {
         let guard = self.conn();
         f(&guard)
+    }
+
+    /// Mark `Running` jobs with `started_at` older than `max_age` as `Failed` (crash / `kill -9` recovery).
+    /// Returns rows updated. `max_age` zero disables.
+    pub fn sweep_stale_running_jobs(
+        &self,
+        max_age: std::time::Duration,
+    ) -> rusvel_core::Result<u64> {
+        if max_age.is_zero() {
+            return Ok(0);
+        }
+        let ch_dur = chrono::Duration::from_std(max_age).map_err(|_| {
+            RusvelError::Validation("stale job max age out of range".into())
+        })?;
+        let cutoff = Utc::now() - ch_dur;
+        let cutoff_s = cutoff.to_rfc3339();
+        let failed_status =
+            serde_json::to_string(&JobStatus::Failed).map_err(|e| RusvelError::Serialization(e.to_string()))?;
+        let running_status =
+            serde_json::to_string(&JobStatus::Running).map_err(|e| RusvelError::Serialization(e.to_string()))?;
+        let msg = "stale Running job (process died or force-killed); swept at startup";
+        let conn = self.conn();
+        let n = conn
+            .execute(
+                "UPDATE jobs SET status = ?1, completed_at = ?2, error = ?3, started_at = NULL \
+                 WHERE status = ?4 AND started_at IS NOT NULL AND started_at < ?5",
+                params![
+                    failed_status,
+                    Utc::now().to_rfc3339(),
+                    msg,
+                    running_status,
+                    cutoff_s
+                ],
+            )
+            .map_err(|e| RusvelError::Storage(e.to_string()))?;
+        Ok(n as u64)
     }
 
     /// Roll up `cost_events` for `/api/analytics/spend`. On missing table or query error, returns zeros.
@@ -1287,13 +1323,13 @@ impl JobStore for Database {
         let conn = self.conn.clone();
         let kinds = kinds.to_vec();
         tokio::task::spawn_blocking(move || {
-            let db = conn.lock().map_err(|e| RusvelError::Storage(format!("mutex poisoned: {e}")))?;
+            let mut db = conn.lock().map_err(|e| RusvelError::Storage(format!("mutex poisoned: {e}")))?;
             let now = Utc::now().to_rfc3339();
             let queued_status = serde_json::to_string(&JobStatus::Queued)?;
 
             let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
             param_values.push(Box::new(queued_status.clone()));
-            param_values.push(Box::new(now));
+            param_values.push(Box::new(now.clone()));
 
             let kind_filter = if kinds.is_empty() {
                 String::new()
@@ -1320,34 +1356,53 @@ impl JobStore for Database {
                 .map(std::convert::AsRef::as_ref)
                 .collect();
 
-            let mut stmt = db
-                .prepare(&sql)
+            let tx = db
+                .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(|e| RusvelError::Storage(e.to_string()))?;
 
-            let result = stmt
-                .query_row(params_refs.as_slice(), |row| Ok(row_to_job(row)))
-                .optional()
-                .map_err(|e| RusvelError::Storage(e.to_string()))?;
+            let result = {
+                let mut stmt = tx
+                    .prepare(&sql)
+                    .map_err(|e| RusvelError::Storage(e.to_string()))?;
+                stmt
+                    .query_row(params_refs.as_slice(), |row| Ok(row_to_job(row)))
+                    .optional()
+                    .map_err(|e| RusvelError::Storage(e.to_string()))?
+            };
 
             match result {
                 Some(job) => {
                     let job = job?;
-                    // Claim it by setting status to Running
                     let running_status = serde_json::to_string(&JobStatus::Running)?;
-                    let now = Utc::now().to_rfc3339();
-                    db.execute(
-                        "UPDATE jobs SET status = ?1, started_at = ?2 WHERE id = ?3",
-                        params![running_status, now, job.id.to_string()],
-                    )
-                    .map_err(|e| RusvelError::Storage(e.to_string()))?;
-
-                    // Return the job with updated status
+                    let started = Utc::now().to_rfc3339();
+                    let n = tx
+                        .execute(
+                            "UPDATE jobs SET status = ?1, started_at = ?2 WHERE id = ?3 AND status = ?4",
+                            params![
+                                running_status,
+                                started,
+                                job.id.to_string(),
+                                queued_status
+                            ],
+                        )
+                        .map_err(|e| RusvelError::Storage(e.to_string()))?;
+                    if n != 1 {
+                        tx.rollback()
+                            .map_err(|e| RusvelError::Storage(e.to_string()))?;
+                        return Ok(None);
+                    }
+                    tx.commit()
+                        .map_err(|e| RusvelError::Storage(e.to_string()))?;
                     let mut claimed = job;
                     claimed.status = JobStatus::Running;
                     claimed.started_at = Some(Utc::now());
                     Ok(Some(claimed))
                 }
-                None => Ok(None),
+                None => {
+                    tx.commit()
+                        .map_err(|e| RusvelError::Storage(e.to_string()))?;
+                    Ok(None)
+                }
             }
         })
         .await
@@ -1651,9 +1706,20 @@ impl JobPort for Database {
             });
         }
 
-        job.status = JobStatus::Failed;
-        job.completed_at = Some(Utc::now());
-        job.error = Some(error);
+        if job.retries < job.max_retries {
+            job.retries += 1;
+            job.status = JobStatus::Queued;
+            job.started_at = None;
+            job.completed_at = None;
+            job.error = Some(format!(
+                "retry {}/{}: {}",
+                job.retries, job.max_retries, error
+            ));
+        } else {
+            job.status = JobStatus::Failed;
+            job.completed_at = Some(Utc::now());
+            job.error = Some(error);
+        }
         JobStore::update(self, &job).await
     }
 
