@@ -486,7 +486,7 @@ mod tests {
 
         // Before paying, revenue should be 0.
         let rev = engine.invoices().total_revenue(sid).await.unwrap();
-        assert_eq!(rev, 0.0);
+        assert!((rev - 0.0).abs() < f64::EPSILON);
 
         engine.invoices().mark_paid(&inv_id).await.unwrap();
 
@@ -611,7 +611,7 @@ mod tests {
             OutreachSendDispatch::HoldForApproval(r) => {
                 assert_eq!(r.output["to"], "alice@example.com");
             }
-            _ => panic!("expected HoldForApproval"),
+            OutreachSendDispatch::Complete { .. } => panic!("expected HoldForApproval"),
         }
         assert_eq!(mock.sent_len(), 0);
     }
@@ -692,7 +692,7 @@ mod tests {
                 assert_eq!(next.kind, JobKind::OutreachSend);
                 assert_eq!(next.payload["step_index"], serde_json::json!(1));
             }
-            _ => panic!("expected Complete"),
+            OutreachSendDispatch::HoldForApproval(_) => panic!("expected Complete"),
         }
         assert_eq!(mock.sent_len(), 1);
     }

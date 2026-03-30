@@ -6415,7 +6415,6 @@ dependencies = [
  "hex",
  "hmac",
  "reqwest",
- "rusqlite",
  "rusvel-agent",
  "rusvel-cdp",
  "rusvel-channel",
@@ -6426,6 +6425,7 @@ dependencies = [
  "rusvel-event",
  "rusvel-llm",
  "rusvel-memory",
+ "rusvel-pipeline",
  "rusvel-schema",
  "rusvel-webhook",
  "serde",
@@ -6637,6 +6637,7 @@ dependencies = [
  "chrono",
  "rusqlite",
  "rusvel-core",
+ "rusvel-schema",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -6788,6 +6789,18 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "rusvel-pipeline"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "content-engine",
+ "forge-engine",
+ "harvest-engine",
+ "rusvel-core",
+ "serde_json",
 ]
 
 [[package]]

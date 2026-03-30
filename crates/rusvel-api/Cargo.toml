@@ -14,6 +14,7 @@ rusvel-schema = { workspace = true }
 rusvel-llm = { workspace = true }
 rusvel-agent = { workspace = true }
 forge-engine = { workspace = true }
+rusvel-pipeline = { path = "../rusvel-pipeline" }
 code-engine = { workspace = true }
 content-engine = { workspace = true }
 harvest-engine = { workspace = true }
@@ -33,7 +34,6 @@ chrono = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
 futures = { workspace = true }
-rusqlite = { workspace = true }
 tokio-stream = { version = "0.1", features = ["sync"] }
 reqwest = { workspace = true }
 async-trait = { workspace = true }

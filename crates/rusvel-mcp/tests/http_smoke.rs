@@ -96,7 +96,7 @@ impl ToolPort for StubTool {
     }
 }
 
-async fn mcp_router() -> Router {
+async fn build_rusvel_mcp() -> (Arc<RusvelMcp>, tempfile::TempDir) {
     let dir = tempdir().unwrap();
     let base = dir.path();
     let db: Arc<Database> = Arc::new(Database::open(base.join("rusvel.db")).unwrap());
@@ -127,12 +127,17 @@ async fn mcp_router() -> Router {
     ));
 
     let mcp = Arc::new(RusvelMcp::new(forge, sessions));
-    nest_mcp_http(Router::new(), mcp, McpAuth::default())
+    (mcp, dir)
+}
+
+async fn mcp_router() -> (Router, tempfile::TempDir) {
+    let (mcp, dir) = build_rusvel_mcp().await;
+    (nest_mcp_http(Router::new(), mcp, McpAuth::default()), dir)
 }
 
 #[tokio::test]
 async fn post_initialize_returns_protocol_json() {
-    let app = mcp_router().await;
+    let (app, _guard) = mcp_router().await;
     let body = json!({
         "jsonrpc": "2.0",
         "id": 1,
@@ -155,7 +160,7 @@ async fn post_initialize_returns_protocol_json() {
 
 #[tokio::test]
 async fn post_tools_list_includes_session_list() {
-    let app = mcp_router().await;
+    let (app, _guard) = mcp_router().await;
     let body = json!({
         "jsonrpc": "2.0",
         "id": 2,
@@ -173,6 +178,25 @@ async fn post_tools_list_includes_session_list() {
     let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
     let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     let tools = v["result"]["tools"].as_array().expect("tools array");
+    let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
+    assert!(names.contains(&"session_list"));
+}
+
+/// Same `handle_method` path as stdio JSON-RPC (initialize + tools/list).
+#[tokio::test]
+async fn handle_method_initialize_and_tools_list_stdio_path() {
+    let (mcp, _guard) = build_rusvel_mcp().await;
+    let init = mcp
+        .handle_method("initialize", serde_json::json!({}))
+        .await
+        .expect("initialize");
+    assert_eq!(init["serverInfo"]["name"], "rusvel-mcp");
+    let listed = mcp
+        .handle_method("tools/list", serde_json::json!({}))
+        .await
+        .expect("tools/list");
+    let tools = listed["tools"].as_array().expect("tools array");
+    assert!(!tools.is_empty());
     let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
     assert!(names.contains(&"session_list"));
 }

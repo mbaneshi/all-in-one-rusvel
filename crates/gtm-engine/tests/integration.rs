@@ -329,7 +329,7 @@ async fn invoice_create_pay_revenue() {
         .unwrap();
 
     let rev_before = engine.invoices().total_revenue(sid).await.unwrap();
-    assert_eq!(rev_before, 0.0);
+    assert!((rev_before - 0.0).abs() < f64::EPSILON);
 
     engine.invoices().mark_paid(&inv_id).await.unwrap();
     let rev_after = engine.invoices().total_revenue(sid).await.unwrap();

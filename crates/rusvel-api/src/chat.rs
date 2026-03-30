@@ -201,8 +201,10 @@ pub async fn chat_handler(
 pub async fn list_conversations(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Vec<ConversationSummary>>, (StatusCode, String)> {
-    let mut conv_filter = rusvel_core::domain::ObjectFilter::default();
-    conv_filter.limit = Some(5000);
+    let conv_filter = rusvel_core::domain::ObjectFilter {
+        limit: Some(5000),
+        ..Default::default()
+    };
     let all = state
         .storage
         .objects()
@@ -272,9 +274,11 @@ async fn load_history(
     conversation_id: &str,
     limit: usize,
 ) -> rusvel_core::error::Result<Vec<ChatMessage>> {
-    let mut filter = rusvel_core::domain::ObjectFilter::default();
-    filter.conversation_id = Some(conversation_id.to_string());
-    filter.limit = Some((limit as u32).saturating_mul(4).max(100).min(10_000));
+    let filter = rusvel_core::domain::ObjectFilter {
+        conversation_id: Some(conversation_id.to_string()),
+        limit: Some((limit as u32).saturating_mul(4).clamp(100, 10_000)),
+        ..Default::default()
+    };
     let rows = storage.objects().list("chat_message", filter).await?;
 
     let mut msgs: Vec<ChatMessage> = rows

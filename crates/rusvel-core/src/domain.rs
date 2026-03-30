@@ -1,7 +1,8 @@
 //! Shared domain types used across all RUSVEL engines and adapters.
 //!
-//! **ADR-007:** Every struct carries `metadata: serde_json::Value` for
-//! schema evolution — engines can stash extra fields without migrations.
+//! **ADR-007:** Persisted and API-stable structs carry `metadata: serde_json::Value` for
+//! schema evolution. Ephemeral LLM wire types (`Content`, `LlmRequest`, …) omit it to keep
+//! token and serde overhead low.
 
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
@@ -428,6 +429,8 @@ pub struct StarterKit {
     pub target_audience: String,
     pub departments: Vec<String>,
     pub entities: Vec<KitEntity>,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
 }
 
 /// One entity to create when a [`StarterKit`] is installed.
@@ -437,6 +440,8 @@ pub struct KitEntity {
     pub department: String,
     pub name: String,
     pub definition: serde_json::Value,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
 }
 
 /// Configuration passed to [`AgentPort::create`](crate::ports::AgentPort::create).
@@ -523,6 +528,8 @@ pub struct SessionSummary {
     pub kind: SessionKind,
     pub tags: Vec<String>,
     pub updated_at: DateTime<Utc>,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
 }
 
 /// A single execution run within a session.
@@ -574,6 +581,8 @@ pub struct ThreadMessage {
     pub role: ThreadChannel,
     pub content: Content,
     pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -918,6 +927,8 @@ pub struct EventFilter {
     pub kind: Option<String>,
     pub since: Option<DateTime<Utc>>,
     pub limit: Option<u32>,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
 }
 
 /// Subscribes to event patterns and starts an agent run or flow execution.
@@ -932,6 +943,8 @@ pub struct EventTrigger {
     /// When set, only [`Event::source`] must equal this department id.
     pub department_id: Option<String>,
     pub enabled: bool,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
 }
 
 /// What to run when an [`EventTrigger`] fires.
@@ -966,6 +979,8 @@ pub struct CodeSnapshotRef {
     pub id: SnapshotId,
     pub repo: RepoRef,
     pub analyzed_at: DateTime<Utc>,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
 }
 
 /// Compact summary of a code analysis run for content / social prompts.
@@ -1073,6 +1088,8 @@ pub struct ToolHookConfig {
     pub id: String,
     pub hook_point: HookPoint,
     pub tool_pattern: String,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -1100,6 +1117,8 @@ pub struct ToolPermission {
     /// When `Some`, this rule only applies to the given department.
     /// When `None`, it is a global rule.
     pub department_id: Option<String>,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -1227,6 +1246,8 @@ pub struct UserProfile {
     pub products: ProfileProducts,
     pub mission: ProfileMission,
     pub preferences: ProfilePreferences,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1234,6 +1255,8 @@ pub struct ProfileIdentity {
     pub name: String,
     pub role: String,
     pub tagline: String,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1241,12 +1264,16 @@ pub struct ProfileSkills {
     pub primary: Vec<String>,
     #[serde(default)]
     pub secondary: Vec<String>,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfileProducts {
     pub names: Vec<String>,
     pub description: String,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1254,12 +1281,16 @@ pub struct ProfileMission {
     pub vision: String,
     #[serde(default)]
     pub values: Vec<String>,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfilePreferences {
     #[serde(default = "default_style")]
     pub style: String,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
 }
 
 fn default_style() -> String {
@@ -1532,6 +1563,8 @@ pub struct FlowNodeResult {
     pub error: Option<String>,
     pub started_at: Option<DateTime<Utc>>,
     pub finished_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
 }
 
 fn default_empty_object() -> serde_json::Value {
@@ -1554,6 +1587,8 @@ pub struct FlowCheckpoint {
     #[serde(default)]
     pub started_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -1578,6 +1613,8 @@ pub struct PlaybookStep {
     pub name: String,
     pub description: String,
     pub action: PlaybookAction,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
 }
 
 /// What a playbook step executes.
@@ -1612,6 +1649,8 @@ pub struct PlaybookRun {
     pub completed_at: Option<DateTime<Utc>>,
     #[serde(default)]
     pub error: Option<String>,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
 }
 
 /// Lifecycle of a [`PlaybookRun`].

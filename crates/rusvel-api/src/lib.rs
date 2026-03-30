@@ -96,8 +96,10 @@ pub struct AppState {
     pub events: Arc<dyn EventPort>,
     /// Same SQLite job queue as [`StoragePort::jobs`] when using `rusvel_db::Database`.
     pub jobs: Arc<dyn JobPort>,
-    /// Same database as `storage` when using `rusvel_db::Database` — for RusvelBase / schema API.
+    /// Same database as `storage` when using `rusvel_db::Database` — health, analytics, direct SQL.
     pub database: Arc<Database>,
+    /// RusvelBase browser routes (`/api/db/*`); implemented by [`rusvel_db::RusvelBaseAdapter`].
+    pub rusvel_base: Arc<dyn rusvel_core::ports::RusvelBasePort>,
     pub storage: Arc<dyn StoragePort>,
     pub profile: Option<UserProfile>,
     pub registry: DepartmentRegistry,

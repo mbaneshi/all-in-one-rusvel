@@ -64,6 +64,7 @@ fn builtin_playbooks() -> Vec<Playbook> {
                             "grep".into(),
                         ],
                     },
+                    metadata: serde_json::Value::default(),
                 },
                 rusvel_core::domain::PlaybookStep {
                     name: "Draft".into(),
@@ -73,6 +74,7 @@ fn builtin_playbooks() -> Vec<Playbook> {
                         prompt_template: "Write a concise technical blog draft (with title and sections) based on this analysis. Audience: senior engineers.\n\nAnalysis:\n{{last_output}}".into(),
                         tools: vec!["read_file".into(), "write_file".into()],
                     },
+                    metadata: serde_json::Value::default(),
                 },
                 rusvel_core::domain::PlaybookStep {
                     name: "Review".into(),
@@ -82,6 +84,7 @@ fn builtin_playbooks() -> Vec<Playbook> {
                         prompt_template: "Review the draft below. List concrete improvements (max 5) and a short revised summary.\n\nDraft:\n{{last_output}}".into(),
                         tools: vec![],
                     },
+                    metadata: serde_json::Value::default(),
                 },
             ],
             metadata: json!({"builtin": true}),
@@ -105,6 +108,7 @@ fn builtin_playbooks() -> Vec<Playbook> {
                             "grep".into(),
                         ],
                     },
+                    metadata: serde_json::Value::default(),
                 },
                 rusvel_core::domain::PlaybookStep {
                     name: "Score".into(),
@@ -114,6 +118,7 @@ fn builtin_playbooks() -> Vec<Playbook> {
                         prompt_template: "Use harvest_score on specific opportunity IDs from harvest_list when needed. Given the scan summary below, propose a scoring rubric (0–10) and rank the top 3 opportunities with rationale.\n\n{{last_output}}".into(),
                         tools: vec!["harvest_list".into(), "harvest_score".into()],
                     },
+                    metadata: serde_json::Value::default(),
                 },
                 rusvel_core::domain::PlaybookStep {
                     name: "Proposals".into(),
@@ -123,6 +128,7 @@ fn builtin_playbooks() -> Vec<Playbook> {
                         prompt_template: "Use harvest_propose for the top opportunity when session_id and opportunity_id are known. Otherwise draft short proposal or outreach snippets (2–3 paragraphs total) from:\n\n{{last_output}}".into(),
                         tools: vec!["harvest_propose".into(), "harvest_list".into()],
                     },
+                    metadata: serde_json::Value::default(),
                 },
             ],
             metadata: json!({"builtin": true}),
@@ -141,6 +147,7 @@ fn builtin_playbooks() -> Vec<Playbook> {
                         .into(),
                     tools: vec!["harvest_list".into()],
                 },
+                metadata: serde_json::Value::default(),
             }],
             metadata: json!({"builtin": true, "triggers": ["post-harvest", "high-score-opportunity"]}),
         },
@@ -158,6 +165,7 @@ fn builtin_playbooks() -> Vec<Playbook> {
                         prompt_template: "Summarize what each RUSVEL department (code, content, harvest, finance, growth, gtm, product, support, infra, legal, distro, forge) would report as its top 1–2 items today. If unknown, say 'no signal' for that dept.\n\nNotes:\n{{last_output}}".into(),
                         tools: vec!["read_file".into(), "grep".into()],
                     },
+                    metadata: serde_json::Value::default(),
                 },
                 rusvel_core::domain::PlaybookStep {
                     name: "Summarize".into(),
@@ -167,6 +175,7 @@ fn builtin_playbooks() -> Vec<Playbook> {
                         prompt_template: "From the department notes below, extract themes, risks, and dependencies (bullet list).\n\n{{last_output}}".into(),
                         tools: vec![],
                     },
+                    metadata: serde_json::Value::default(),
                 },
                 rusvel_core::domain::PlaybookStep {
                     name: "Present".into(),
@@ -176,6 +185,7 @@ fn builtin_playbooks() -> Vec<Playbook> {
                         prompt_template: "Produce a tight executive brief (max 200 words): headline, 3 priorities, 1 risk, 1 ask.\n\nInput:\n{{last_output}}".into(),
                         tools: vec![],
                     },
+                    metadata: serde_json::Value::default(),
                 },
             ],
             metadata: json!({"builtin": true}),
@@ -374,6 +384,7 @@ pub async fn run_playbook(
         started_at: Utc::now(),
         completed_at: None,
         error: None,
+        metadata: serde_json::Value::default(),
     };
     store()
         .runs

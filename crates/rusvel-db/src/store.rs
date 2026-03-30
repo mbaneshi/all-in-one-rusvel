@@ -247,15 +247,14 @@ impl Database {
         if max_age.is_zero() {
             return Ok(0);
         }
-        let ch_dur = chrono::Duration::from_std(max_age).map_err(|_| {
-            RusvelError::Validation("stale job max age out of range".into())
-        })?;
+        let ch_dur = chrono::Duration::from_std(max_age)
+            .map_err(|_| RusvelError::Validation("stale job max age out of range".into()))?;
         let cutoff = Utc::now() - ch_dur;
         let cutoff_s = cutoff.to_rfc3339();
-        let failed_status =
-            serde_json::to_string(&JobStatus::Failed).map_err(|e| RusvelError::Serialization(e.to_string()))?;
-        let running_status =
-            serde_json::to_string(&JobStatus::Running).map_err(|e| RusvelError::Serialization(e.to_string()))?;
+        let failed_status = serde_json::to_string(&JobStatus::Failed)
+            .map_err(|e| RusvelError::Serialization(e.to_string()))?;
+        let running_status = serde_json::to_string(&JobStatus::Running)
+            .map_err(|e| RusvelError::Serialization(e.to_string()))?;
         let msg = "stale Running job (process died or force-killed); swept at startup";
         let conn = self.conn();
         let n = conn
@@ -988,6 +987,7 @@ impl SessionStore for Database {
                     updated_at: DateTime::parse_from_rfc3339(&updated_str)
                         .map(|dt| dt.with_timezone(&Utc))
                         .map_err(|e| RusvelError::Storage(e.to_string()))?,
+                    metadata: serde_json::Value::default(),
                 });
             }
             Ok(summaries)
@@ -2466,7 +2466,7 @@ mod tests {
         let snap = db.cost_events_spend_snapshot().await.unwrap();
         assert_eq!(snap.event_row_count, 0);
         assert!(snap.by_department_usd.is_empty());
-        assert_eq!(snap.total_usd_all, 0.0);
+        assert!((snap.total_usd_all - 0.0).abs() < f64::EPSILON);
     }
 
     #[tokio::test]

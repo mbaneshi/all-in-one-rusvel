@@ -24,6 +24,7 @@ members = [
     "crates/rusvel-webhook",
     "crates/rusvel-cron",
     "crates/rusvel-channel",
+    "crates/rusvel-pipeline",
     "crates/dept-messaging",
 
     # ─── Domain Engines ───

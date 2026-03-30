@@ -362,7 +362,7 @@ mod tests {
             .unwrap();
         let kpis = engine.kpi().list_kpis(sid).await.unwrap();
         assert_eq!(kpis.len(), 1);
-        assert_eq!(kpis[0].value, 5000.0);
+        assert!((kpis[0].value - 5000.0).abs() < f64::EPSILON);
     }
 
     #[tokio::test]

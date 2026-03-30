@@ -292,6 +292,9 @@ async fn test_router() -> (
         jobs.clone(),
     ));
 
+    let rusvel_base: Arc<dyn rusvel_core::ports::RusvelBasePort> =
+        Arc::new(rusvel_db::RusvelBaseAdapter(db.clone()));
+
     let state = AppState {
         forge,
         code_engine: None,
@@ -303,6 +306,7 @@ async fn test_router() -> (
         events,
         jobs: jobs.clone(),
         database: db.clone(),
+        rusvel_base,
         storage,
         profile: None,
         registry: DepartmentRegistry::load(
@@ -355,10 +359,7 @@ async fn post_harvest_scan_mock_persists_opportunities() {
     let (st2, list_body) = json_request(
         &mut router,
         "GET",
-        &format!(
-            "/api/dept/harvest/list?session_id={}",
-            session_a.to_string()
-        ),
+        &format!("/api/dept/harvest/list?session_id={session_a}"),
         None,
     )
     .await;
@@ -394,10 +395,7 @@ async fn post_harvest_ingest_persists_opportunities() {
     let (st2, list_body) = json_request(
         &mut router,
         "GET",
-        &format!(
-            "/api/dept/harvest/list?session_id={}",
-            session_a.to_string()
-        ),
+        &format!("/api/dept/harvest/list?session_id={session_a}"),
         None,
     )
     .await;
@@ -470,10 +468,7 @@ async fn harvest_session_isolation() {
     let (st2, list_b) = json_request(
         &mut router,
         "GET",
-        &format!(
-            "/api/dept/harvest/list?session_id={}",
-            session_b.to_string()
-        ),
+        &format!("/api/dept/harvest/list?session_id={session_b}"),
         None,
     )
     .await;

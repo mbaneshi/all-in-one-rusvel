@@ -68,6 +68,7 @@ fn kit_indie_saas() -> StarterKit {
                     "budget_limit": null,
                     "metadata": {}
                 }),
+                metadata: serde_json::Value::default(),
             },
             KitEntity {
                 kind: "agent".into(),
@@ -83,6 +84,7 @@ fn kit_indie_saas() -> StarterKit {
                     "budget_limit": null,
                     "metadata": {}
                 }),
+                metadata: serde_json::Value::default(),
             },
             KitEntity {
                 kind: "skill".into(),
@@ -94,6 +96,7 @@ fn kit_indie_saas() -> StarterKit {
                     "prompt_template": "Given the funnel data or description below, produce: (1) a one-paragraph health summary, (2) 3 hypotheses for the biggest leak, (3) one concrete next experiment with success metric and duration. Data: {{input}}",
                     "metadata": {}
                 }),
+                metadata: serde_json::Value::default(),
             },
             KitEntity {
                 kind: "skill".into(),
@@ -105,6 +108,7 @@ fn kit_indie_saas() -> StarterKit {
                     "prompt_template": "The user wants to improve: {{input}}\n\nPropose one weekly growth experiment: hypothesis, channel, audience, copy angle, metric, sample size, and stop criteria. Keep it feasible for a solo founder.",
                     "metadata": {}
                 }),
+                metadata: serde_json::Value::default(),
             },
             KitEntity {
                 kind: "rule".into(),
@@ -116,8 +120,10 @@ fn kit_indie_saas() -> StarterKit {
                     "enabled": true,
                     "metadata": {}
                 }),
+                metadata: serde_json::Value::default(),
             },
         ],
+        metadata: serde_json::Value::default(),
     }
 }
 
@@ -146,6 +152,7 @@ fn kit_freelancer() -> StarterKit {
                     "prompt_template": "From this niche or market description: {{input}}\n\nPropose 5 concrete opportunity angles (client type, pain, deliverable, rough price band), ranked by fit for a solo freelancer.",
                     "metadata": {}
                 }),
+                metadata: serde_json::Value::default(),
             },
             KitEntity {
                 kind: "agent".into(),
@@ -161,6 +168,7 @@ fn kit_freelancer() -> StarterKit {
                     "budget_limit": null,
                     "metadata": {}
                 }),
+                metadata: serde_json::Value::default(),
             },
             KitEntity {
                 kind: "rule".into(),
@@ -172,6 +180,7 @@ fn kit_freelancer() -> StarterKit {
                     "enabled": true,
                     "metadata": {}
                 }),
+                metadata: serde_json::Value::default(),
             },
             KitEntity {
                 kind: "workflow".into(),
@@ -194,8 +203,10 @@ fn kit_freelancer() -> StarterKit {
                     ],
                     "metadata": {}
                 }),
+                metadata: serde_json::Value::default(),
             },
         ],
+        metadata: serde_json::Value::default(),
     }
 }
 
@@ -222,6 +233,7 @@ fn kit_open_source_maintainer() -> StarterKit {
                     "budget_limit": null,
                     "metadata": {}
                 }),
+                metadata: serde_json::Value::default(),
             },
             KitEntity {
                 kind: "skill".into(),
@@ -233,6 +245,7 @@ fn kit_open_source_maintainer() -> StarterKit {
                     "prompt_template": "From this list of changes/commits: {{input}}\n\nWrite release notes: title, short summary, breaking changes section (if any), and bullet list of improvements with user-facing wording.",
                     "metadata": {}
                 }),
+                metadata: serde_json::Value::default(),
             },
             KitEntity {
                 kind: "rule".into(),
@@ -244,8 +257,10 @@ fn kit_open_source_maintainer() -> StarterKit {
                     "enabled": true,
                     "metadata": {}
                 }),
+                metadata: serde_json::Value::default(),
             },
         ],
+        metadata: serde_json::Value::default(),
     }
 }
 

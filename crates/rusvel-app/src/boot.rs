@@ -172,7 +172,7 @@ pub async fn boot_departments(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
     use std::sync::Arc;
 
     use async_trait::async_trait;
@@ -316,10 +316,10 @@ mod tests {
             "expected at least 45 department-registered tools (Sprint 2 target), got {n}"
         );
 
-        let mut seen = HashMap::new();
+        let mut seen = HashSet::new();
         for t in &artifacts.tools {
             assert!(
-                seen.insert(t.name.clone(), ()).is_none(),
+                seen.insert(t.name.clone()),
                 "duplicate tool name: {}",
                 t.name
             );

@@ -137,8 +137,9 @@ async fn webhook_event_triggers_flow_execution_via_trigger_manager() {
         },
         department_id: None,
         enabled: true,
+        metadata: json!({}),
     });
-    let _keep = tm.start(h.event_bus.subscribe());
+    tm.start(h.event_bus.subscribe());
 
     let (st, bytes) = json_request(
         &mut h.router,

@@ -191,7 +191,7 @@ async fn post_outreach_execute_active_sequence_returns_job_id() {
     let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(v["count"], 1);
     assert_eq!(v["job_id"], v["job_ids"][0]);
-    assert!(v["job_id"].as_str().unwrap().len() > 0);
+    assert!(!v["job_id"].as_str().unwrap().is_empty());
 }
 
 #[tokio::test]

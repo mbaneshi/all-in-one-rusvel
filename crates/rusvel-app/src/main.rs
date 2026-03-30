@@ -785,15 +785,15 @@ fn warn_open_api_exposure(addr: &SocketAddr, auth: &rusvel_api::auth::AuthConfig
         );
         return;
     }
-    if !addr.ip().is_loopback() {
+    if addr.ip().is_loopback() {
+        tracing::info!(
+            "API bearer auth disabled (no RUSVEL_API_* tokens); loopback bind — OK for local dev"
+        );
+    } else {
         tracing::warn!(
             target: "rusvel_security",
             "HTTP bound to {} with no RUSVEL_API_TOKEN or RUSVEL_API_READ_TOKEN — /api/* is network-open. Set tokens or use loopback (127.0.0.1) or RUSVEL_ALLOW_INSECURE_API=1 only on trusted networks.",
             addr
-        );
-    } else {
-        tracing::info!(
-            "API bearer auth disabled (no RUSVEL_API_* tokens); loopback bind — OK for local dev"
         );
     }
 }
@@ -841,9 +841,7 @@ async fn main() -> Result<()> {
             .unwrap_or_else(|| "info".to_string());
         EnvFilter::new(level)
     };
-    tracing_subscriber::fmt()
-        .with_env_filter(log_filter)
-        .init();
+    tracing_subscriber::fmt().with_env_filter(log_filter).init();
 
     // 4. Concrete adapters
     let db: Arc<Database> = Arc::new(Database::open(data_dir.join("rusvel.db"))?);
@@ -1668,6 +1666,9 @@ async fn main() -> Result<()> {
 
         harvest_engine.configure_rag(embedding.clone(), vector_store.clone());
 
+        let rusvel_base: Arc<dyn rusvel_core::ports::RusvelBasePort> =
+            Arc::new(rusvel_db::RusvelBaseAdapter(db.clone()));
+
         let state = AppState {
             forge: forge.clone(),
             code_engine: Some(code_engine.clone()),
@@ -1679,6 +1680,7 @@ async fn main() -> Result<()> {
             events: events.clone(),
             jobs: jobs.clone(),
             database: db.clone(),
+            rusvel_base,
             storage: db.clone() as Arc<dyn StoragePort>,
             profile,
             registry,
@@ -1803,6 +1805,9 @@ async fn main() -> Result<()> {
 
         harvest_engine.configure_rag(embedding.clone(), vector_store.clone());
 
+        let rusvel_base: Arc<dyn rusvel_core::ports::RusvelBasePort> =
+            Arc::new(rusvel_db::RusvelBaseAdapter(db.clone()));
+
         let state = AppState {
             forge: forge.clone(),
             code_engine: Some(code_engine.clone()),
@@ -1814,6 +1819,7 @@ async fn main() -> Result<()> {
             events: events.clone(),
             jobs: jobs.clone(),
             database: db.clone(),
+            rusvel_base,
             storage: db.clone() as Arc<dyn StoragePort>,
             profile,
             registry,

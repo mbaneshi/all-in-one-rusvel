@@ -1522,7 +1522,7 @@ mod tests {
 
                 // Split into N delta chunks
                 if !full_text.is_empty() && deltas > 0 {
-                    let chunk_size = (full_text.len() + deltas - 1) / deltas;
+                    let chunk_size = full_text.len().div_ceil(deltas);
                     for chunk in full_text.as_bytes().chunks(chunk_size) {
                         let text = String::from_utf8_lossy(chunk).to_string();
                         let _ = tx.send(LlmStreamEvent::Delta(text)).await;

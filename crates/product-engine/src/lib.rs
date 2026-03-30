@@ -375,7 +375,7 @@ mod tests {
             .unwrap();
         let tiers = engine.pricing().list_tiers(sid).await.unwrap();
         assert_eq!(tiers.len(), 1);
-        assert_eq!(tiers[0].price_monthly, 29.0);
+        assert!((tiers[0].price_monthly - 29.0).abs() < f64::EPSILON);
     }
 
     #[tokio::test]

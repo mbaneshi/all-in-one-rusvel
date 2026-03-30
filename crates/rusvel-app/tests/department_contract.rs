@@ -349,13 +349,18 @@ macro_rules! test_department_contract {
                 dept.register(&mut ctx)
                     .await
                     .expect("register should succeed");
-                assert!(
-                    ctx.tools.len() >= $min_tools,
-                    "{}: expected >= {} tools, got {}",
-                    $expected_id,
-                    $min_tools,
-                    ctx.tools.len()
-                );
+                {
+                    const MIN_TOOLS: usize = $min_tools;
+                    if MIN_TOOLS > 0 {
+                        assert!(
+                            ctx.tools.len() >= MIN_TOOLS,
+                            "{}: expected >= {} tools, got {}",
+                            $expected_id,
+                            MIN_TOOLS,
+                            ctx.tools.len()
+                        );
+                    }
+                }
             }
 
             #[tokio::test]

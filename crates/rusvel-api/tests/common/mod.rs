@@ -284,6 +284,9 @@ async fn build_harness_with_auth_and_gtm(
         jobs.clone(),
     ));
 
+    let rusvel_base: Arc<dyn rusvel_core::ports::RusvelBasePort> =
+        Arc::new(rusvel_db::RusvelBaseAdapter(db.clone()));
+
     let state = AppState {
         forge,
         code_engine: Some(code_engine),
@@ -295,6 +298,7 @@ async fn build_harness_with_auth_and_gtm(
         events,
         jobs,
         database: db.clone(),
+        rusvel_base,
         storage: storage.clone(),
         profile: None,
         registry: DepartmentRegistry::load(

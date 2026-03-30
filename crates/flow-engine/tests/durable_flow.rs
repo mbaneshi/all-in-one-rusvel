@@ -236,7 +236,7 @@ fn flow_code_then_browser_fail() -> (FlowDef, FlowNodeId, FlowNodeId) {
     let flow = FlowDef {
         id: FlowId::new(),
         name: "fail-at-browser".into(),
-        description: "".into(),
+        description: String::new(),
         nodes: vec![
             FlowNodeDef {
                 id: n1,

@@ -117,6 +117,7 @@ impl CodeEngine {
                 metadata: Default::default(),
             },
             analyzed_at: Utc::now(),
+            metadata: serde_json::Value::default(),
         };
 
         let analysis = CodeAnalysis {

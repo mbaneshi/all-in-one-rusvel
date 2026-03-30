@@ -570,7 +570,10 @@ mod tests {
 
         let scoped_all = ScopedToolRegistry::new(registry.clone() as Arc<dyn ToolPort>, vec![]);
         assert_eq!(scoped_all.list().len(), 3);
-        let r = scoped_all.call("other_tool", json!({"message": "x"})).await.unwrap();
+        let r = scoped_all
+            .call("other_tool", json!({"message": "x"}))
+            .await
+            .unwrap();
         assert!(r.success);
     }
 }

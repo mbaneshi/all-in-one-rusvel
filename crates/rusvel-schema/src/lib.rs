@@ -4,19 +4,19 @@
 //! [`SchemaIntrospector::validate_table_name`] and column checks against [`TableInfo`].
 
 use rusqlite::{Connection, OptionalExtension, Row};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use rusvel_core::Result;
 use rusvel_core::error::RusvelError;
 
 /// User-facing table listing (name + approximate row count).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TableSummary {
     pub name: String,
     pub row_count: u64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ColumnInfo {
     pub name: String,
     pub col_type: String,
@@ -25,21 +25,21 @@ pub struct ColumnInfo {
     pub primary_key: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexInfo {
     pub name: String,
     pub columns: Vec<String>,
     pub unique: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ForeignKeyInfo {
     pub from_column: String,
     pub to_table: String,
     pub to_column: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TableInfo {
     pub name: String,
     pub columns: Vec<ColumnInfo>,

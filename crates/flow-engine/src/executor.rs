@@ -98,6 +98,7 @@ async fn persist_checkpoint(
         trigger_data: ctx.trigger_data.clone(),
         started_at: Some(ctx.started_at),
         created_at: Utc::now(),
+        metadata: serde_json::Value::default(),
     };
     let val = serde_json::to_value(&ck)?;
     ctx.storage
@@ -222,6 +223,7 @@ pub async fn execute_flow_with_config(
                     error: None,
                     started_at: None,
                     finished_at: None,
+                    metadata: serde_json::Value::default(),
                 });
             continue;
         }
@@ -304,6 +306,7 @@ pub async fn execute_flow_with_config(
                         error: None,
                         started_at: Some(Utc::now()),
                         finished_at: Some(Utc::now()),
+                        metadata: serde_json::Value::default(),
                     },
                 );
                 completed_success.push(node_id.to_string());
@@ -347,6 +350,7 @@ pub async fn execute_flow_with_config(
                         error: Some(e.to_string()),
                         started_at: Some(Utc::now()),
                         finished_at: Some(Utc::now()),
+                        metadata: serde_json::Value::default(),
                     },
                 );
 
@@ -483,6 +487,7 @@ pub async fn execute_single_node(
             error: None,
             started_at: Some(started),
             finished_at: Some(Utc::now()),
+            metadata: serde_json::Value::default(),
         }),
         Err(e) => Ok(FlowNodeResult {
             status: FlowNodeStatus::Failed,
@@ -490,6 +495,7 @@ pub async fn execute_single_node(
             error: Some(e.to_string()),
             started_at: Some(started),
             finished_at: Some(Utc::now()),
+            metadata: serde_json::Value::default(),
         }),
     }
 }

@@ -509,7 +509,7 @@ mod tests {
         let parsed = parse_cli_output(json).unwrap();
         assert_eq!(parsed.result, "Hello there!");
         assert!(!parsed.is_error);
-        assert_eq!(parsed.total_cost_usd, 0.0);
+        assert!((parsed.total_cost_usd - 0.0).abs() < f64::EPSILON);
         assert_eq!(parsed.session_id, "abc-123");
     }
 
@@ -525,7 +525,7 @@ mod tests {
         let parsed = parse_cli_output(json).unwrap();
         assert_eq!(parsed.result, "Hello!");
         assert!(!parsed.is_error);
-        assert_eq!(parsed.total_cost_usd, 0.07);
+        assert!((parsed.total_cost_usd - 0.07).abs() < 1e-9);
     }
 
     #[test]
@@ -558,7 +558,7 @@ mod tests {
             "session_id": "x"
         }"#;
         let parsed = parse_cli_output(json).unwrap();
-        assert_eq!(parsed.total_cost_usd, 0.05);
+        assert!((parsed.total_cost_usd - 0.05).abs() < 1e-9);
     }
 
     #[test]

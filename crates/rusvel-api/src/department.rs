@@ -725,8 +725,10 @@ pub async fn dept_conversations(
 ) -> Result<Json<Vec<ConversationSummary>>, (StatusCode, String)> {
     validate_dept(&state, &dept)?;
     let namespace = msg_namespace(&dept);
-    let mut df = rusvel_core::domain::ObjectFilter::default();
-    df.limit = Some(5000);
+    let df = rusvel_core::domain::ObjectFilter {
+        limit: Some(5000),
+        ..Default::default()
+    };
     let all = state
         .storage
         .objects()
@@ -826,9 +828,11 @@ async fn load_namespaced_history(
     conversation_id: &str,
     limit: usize,
 ) -> rusvel_core::error::Result<Vec<ChatMessage>> {
-    let mut filter = rusvel_core::domain::ObjectFilter::default();
-    filter.conversation_id = Some(conversation_id.to_string());
-    filter.limit = Some((limit as u32).saturating_mul(4).max(100).min(10_000));
+    let filter = rusvel_core::domain::ObjectFilter {
+        conversation_id: Some(conversation_id.to_string()),
+        limit: Some((limit as u32).saturating_mul(4).clamp(100, 10_000)),
+        ..Default::default()
+    };
     let rows = storage.objects().list(namespace, filter).await?;
     let mut msgs: Vec<ChatMessage> = rows
         .into_iter()

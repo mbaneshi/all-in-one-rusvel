@@ -227,6 +227,7 @@ impl ForgeEngine {
                             error: None,
                             started_at: Some(step_start),
                             finished_at: Some(Utc::now()),
+                            metadata: serde_json::Value::default(),
                         },
                     );
                     emit_pipeline_event(
@@ -252,6 +253,7 @@ impl ForgeEngine {
                             error: Some(e.to_string()),
                             started_at: Some(step_start),
                             finished_at: Some(Utc::now()),
+                            metadata: serde_json::Value::default(),
                         },
                     );
                     emit_pipeline_event(

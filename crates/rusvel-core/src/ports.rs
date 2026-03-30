@@ -30,7 +30,7 @@ use std::path::Path;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::domain::*;
 use crate::error::Result;
@@ -582,4 +582,60 @@ pub trait BrowserPort: Send + Sync {
     async fn evaluate_js(&self, tab_id: &str, script: &str) -> Result<serde_json::Value>;
 
     async fn navigate(&self, tab_id: &str, url: &str) -> Result<()>;
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  18. RusvelBasePort — DB browser / SQL console (schema + ad-hoc queries)
+// ════════════════════════════════════════════════════════════════════
+
+/// Table row in RusvelBase listing (`GET /api/db/tables`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RusvelBaseTableSummary {
+    pub name: String,
+    pub row_count: u64,
+}
+
+/// Column metadata for SQL result sets (matches RusvelBase JSON shape).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RusvelBaseColumnMeta {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub col_type: String,
+}
+
+/// `POST /api/db/sql` response body.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RusvelBaseSqlExecute {
+    pub columns: Vec<RusvelBaseColumnMeta>,
+    pub rows: Vec<Vec<serde_json::Value>>,
+    pub row_count: usize,
+    pub duration_ms: u64,
+}
+
+/// `GET /api/db/tables/{name}/rows` response body.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RusvelBasePagedRows {
+    pub columns: Vec<RusvelBaseColumnMeta>,
+    pub rows: Vec<Vec<serde_json::Value>>,
+    pub row_count: usize,
+    pub table_row_count: u64,
+}
+
+/// SQLite schema browser and safe-ish ad-hoc SQL (used by RusvelBase UI).
+#[async_trait]
+pub trait RusvelBasePort: Send + Sync {
+    async fn list_table_summaries(&self) -> Result<Vec<RusvelBaseTableSummary>>;
+
+    /// JSON value of `rusvel_schema::TableInfo` (stable for the SPA).
+    async fn get_table_schema_json(&self, table: &str) -> Result<serde_json::Value>;
+
+    async fn query_table_rows(
+        &self,
+        table: &str,
+        limit: u32,
+        offset: u32,
+        order: Option<&str>,
+    ) -> Result<RusvelBasePagedRows>;
+
+    async fn execute_sql(&self, sql: &str, read_only: bool) -> Result<RusvelBaseSqlExecute>;
 }
