@@ -70,13 +70,15 @@
 	});
 </script>
 
-<div class="p-6">
-	<h1 class="mb-2 text-2xl font-bold text-foreground">LLM spend</h1>
-	<p class="mb-6 text-sm text-muted-foreground">
-		Spend is aggregated from SQLite <code class="rounded bg-muted px-1">cost_events</code> when
-		present; otherwise from legacy metrics (<code class="rounded bg-muted px-1">llm.cost_usd</code>).
-		Optional session scope includes budget hints from session config.
-	</p>
+<div class="space-y-6">
+	<div>
+		<h2 class="text-lg font-semibold text-foreground">Spend</h2>
+		<p class="mt-1 text-sm text-muted-foreground leading-relaxed">
+			Aggregated from SQLite <code class="rounded bg-muted px-1">cost_events</code> when present; otherwise
+			from legacy metrics (<code class="rounded bg-muted px-1">llm.cost_usd</code>). Optional session scope
+			includes budget hints from session config.
+		</p>
+	</div>
 
 	{#if loading}
 		<p class="text-muted-foreground">Loading…</p>

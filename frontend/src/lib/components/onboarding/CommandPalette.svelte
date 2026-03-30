@@ -152,6 +152,20 @@
 				action: () => navigate('/settings')
 			},
 			{
+				id: 'nav-settings-llm',
+				label: 'Settings — LLM & models',
+				group: 'Navigation',
+				icon: '⚙',
+				action: () => navigate('/settings/llm')
+			},
+			{
+				id: 'nav-settings-spend',
+				label: 'Settings — Spend',
+				group: 'Navigation',
+				icon: '⚙',
+				action: () => navigate('/settings/spend')
+			},
+			{
 				id: 'act-new-session',
 				label: 'Create New Session',
 				group: 'Actions',

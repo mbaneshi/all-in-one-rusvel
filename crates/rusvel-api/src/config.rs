@@ -428,7 +428,10 @@ pub async fn llm_providers_status() -> Json<LlmProvidersReport> {
             wired: true,
             route: format!("HTTP {ollama_base}"),
             healthy: ollama_healthy,
-            detail: Some("Use model ids like ollama/<name> in App defaults.".into()),
+            detail: Some(
+                "Models listed in Settings → LLM are already pulled (ollama pull if missing). Use ollama/<name> in App defaults. Agent tool-calling is not implemented for this adapter yet — use Claude, Cursor, or OpenAI for tool loops."
+                    .into(),
+            ),
         },
         LlmProviderStatus {
             id: "openai",
