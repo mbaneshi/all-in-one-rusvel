@@ -172,6 +172,12 @@
 				model or Save here. Changing the dropdown only changes which model id is requested from whichever
 				backend is already registered.
 			</p>
+			<p class="mt-2 text-xs text-foreground/90 leading-relaxed">
+				<strong>Switch API vs CLI from the UI:</strong>
+				<a href="/settings/control" class="font-medium text-primary underline">Settings → Control center</a>
+				→ Operator preferences → save, then <strong>restart</strong> the Rusvel server (LLM adapters are
+				registered at boot). Saving <em>App defaults</em> on this page does not change API vs CLI.
+			</p>
 			{#if llmReport.claude_effective_transport === 'api'}
 				<p class="mt-2 text-xs text-foreground/90 leading-relaxed">
 					If chat shows <strong>credit balance</strong> errors: add API credits, or set
