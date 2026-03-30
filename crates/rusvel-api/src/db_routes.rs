@@ -29,17 +29,6 @@ fn default_read_only() -> bool {
     true
 }
 
-/// When `RUSVEL_DB_SQL_WRITE` is `0`, `false`, or `off`, POST `/api/db/sql` always runs with
-/// `PRAGMA query_only = ON` (writes blocked) regardless of client `read_only: false`.
-fn env_disallows_sql_writes() -> bool {
-    std::env::var("RUSVEL_DB_SQL_WRITE")
-        .map(|v| {
-            let v = v.trim();
-            v == "0" || v.eq_ignore_ascii_case("false") || v.eq_ignore_ascii_case("off")
-        })
-        .unwrap_or(false)
-}
-
 pub type RowsResponse = RusvelBasePagedRows;
 pub type SqlExecuteResponse = RusvelBaseSqlExecute;
 
@@ -106,11 +95,10 @@ pub async fn post_sql(
     State(state): State<Arc<AppState>>,
     Json(body): Json<SqlBody>,
 ) -> Result<Json<SqlExecuteResponse>, (StatusCode, String)> {
-    let force_read_only = env_disallows_sql_writes();
-    let read_only = force_read_only || body.read_only;
+    // `RUSVEL_DB_SQL_WRITE` write-lock is enforced in `rusvel_db::RusvelBaseAdapter::execute_sql`.
     state
         .rusvel_base
-        .execute_sql(&body.query, read_only)
+        .execute_sql(&body.query, body.read_only)
         .await
         .map_err(map_err)
         .map(Json)

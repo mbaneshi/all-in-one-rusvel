@@ -18,30 +18,15 @@ use crate::Database;
 /// Wraps [`Arc<Database>`] for [`RusvelBasePort`] (spawn_blocking inside each call).
 pub struct RusvelBaseAdapter(pub Arc<Database>);
 
-fn parse_order(s: &str) -> Result<(String, bool)> {
-    let s = s.trim();
-    if s.is_empty() {
-        return Err(RusvelError::Validation("empty order".into()));
-    }
-    if let Some((col, dir)) = s.rsplit_once('.') {
-        match dir.to_ascii_lowercase().as_str() {
-            "asc" => {
-                if SchemaIntrospector::validate_column_name(col) {
-                    return Ok((col.to_string(), false));
-                }
-            }
-            "desc" => {
-                if SchemaIntrospector::validate_column_name(col) {
-                    return Ok((col.to_string(), true));
-                }
-            }
-            _ => {}
-        }
-    }
-    if SchemaIntrospector::validate_column_name(s) {
-        return Ok((s.to_string(), false));
-    }
-    Err(RusvelError::Validation(format!("invalid order: {s}")))
+/// When `RUSVEL_DB_SQL_WRITE` is `0`, `false`, or `off`, [`RusvelBaseAdapter::execute_sql`]
+/// always runs with `PRAGMA query_only = ON` (writes blocked) regardless of `read_only`.
+fn env_disallows_sql_writes() -> bool {
+    std::env::var("RUSVEL_DB_SQL_WRITE")
+        .map(|v| {
+            let v = v.trim();
+            v == "0" || v.eq_ignore_ascii_case("false") || v.eq_ignore_ascii_case("off")
+        })
+        .unwrap_or(false)
 }
 
 fn statement_columns(stmt: &Statement<'_>) -> Vec<RusvelBaseColumnMeta> {
@@ -162,7 +147,7 @@ impl RusvelBasePort for RusvelBaseAdapter {
                 }
                 let info = SchemaIntrospector::get_table(conn, &table)?;
                 let order_clause = if let Some(ref o) = order {
-                    let (col, desc) = parse_order(o)?;
+                    let (col, desc) = rusvel_schema::parse_order_column_spec(o)?;
                     if !SchemaIntrospector::validate_column_for_table(conn, &table, &col)? {
                         return Err(RusvelError::Validation(format!("unknown column: {col}")));
                     }
@@ -209,9 +194,11 @@ impl RusvelBasePort for RusvelBaseAdapter {
         .map_err(join_err)?
     }
 
+    /// Runs ad-hoc SQL. When env `RUSVEL_DB_SQL_WRITE` is `0`/`false`/`off`, `read_only` is forced on.
     async fn execute_sql(&self, sql: &str, read_only: bool) -> Result<RusvelBaseSqlExecute> {
         let db = self.0.clone();
         let sql = sql.to_string();
+        let read_only = env_disallows_sql_writes() || read_only;
         tokio::task::spawn_blocking(move || {
             db.with_connection(|conn| {
                 let start = Instant::now();

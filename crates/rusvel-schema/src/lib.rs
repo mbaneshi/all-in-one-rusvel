@@ -239,6 +239,34 @@ impl SchemaIntrospector {
     }
 }
 
+/// Parse a single SQLite `ORDER BY` column parameter for RusvelBase table browsing:
+/// `col`, `col.asc`, or `col.desc` (case-insensitive). Returns `(column_name, descending)`.
+pub fn parse_order_column_spec(s: &str) -> Result<(String, bool)> {
+    let s = s.trim();
+    if s.is_empty() {
+        return Err(RusvelError::Validation("empty order".into()));
+    }
+    if let Some((col, dir)) = s.rsplit_once('.') {
+        match dir.to_ascii_lowercase().as_str() {
+            "asc" => {
+                if SchemaIntrospector::validate_column_name(col) {
+                    return Ok((col.to_string(), false));
+                }
+            }
+            "desc" => {
+                if SchemaIntrospector::validate_column_name(col) {
+                    return Ok((col.to_string(), true));
+                }
+            }
+            _ => {}
+        }
+    }
+    if SchemaIntrospector::validate_column_name(s) {
+        return Ok((s.to_string(), false));
+    }
+    Err(RusvelError::Validation(format!("invalid order: {s}")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -288,5 +316,34 @@ mod tests {
     fn reject_bad_table_name() {
         let conn = sample_db();
         assert!(SchemaIntrospector::get_table(&conn, "books;DROP").is_err());
+    }
+
+    #[test]
+    fn parse_order_column_spec_plain_and_suffix() {
+        assert_eq!(
+            parse_order_column_spec("id").unwrap(),
+            ("id".to_string(), false)
+        );
+        assert_eq!(
+            parse_order_column_spec(" title ").unwrap(),
+            ("title".to_string(), false)
+        );
+        assert_eq!(
+            parse_order_column_spec("created_at.DESC").unwrap(),
+            ("created_at".to_string(), true)
+        );
+        assert_eq!(
+            parse_order_column_spec("name.asc").unwrap(),
+            ("name".to_string(), false)
+        );
+    }
+
+    #[test]
+    fn parse_order_column_spec_rejects_empty_and_invalid() {
+        assert!(parse_order_column_spec("").is_err());
+        assert!(parse_order_column_spec("   ").is_err());
+        assert!(parse_order_column_spec("id, 1=1").is_err());
+        assert!(parse_order_column_spec("col;drop").is_err());
+        assert!(parse_order_column_spec("bad.dropped").is_err());
     }
 }

@@ -22,6 +22,8 @@ cargo run -- growth list       # List department items
 
 **Runtime security & env:** HTTP bind, API tokens, DB SQL lock, MCP auth, `VITE_RUSVEL_API_TOKEN` — see [`docs/operators/security-hardening.md`](docs/operators/security-hardening.md).
 
+- **`RUSVEL_DB_SQL_WRITE`:** Set to `0`, `false`, or `off` to force read-only SQL for [`RusvelBasePort::execute_sql`](crates/rusvel-db/src/browser.rs) (`PRAGMA query_only`), regardless of client `read_only: false` on `POST /api/db/sql`.
+
 ## Architecture
 
 Hexagonal (ports & adapters). See `docs/design/architecture-v2.md`.

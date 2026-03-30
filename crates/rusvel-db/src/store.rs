@@ -450,11 +450,13 @@ impl Database {
         };
         let order_clause = match order {
             Some(o) => {
-                for part in o.split(',') {
-                    let token = part.trim().split_whitespace().next().unwrap_or("");
-                    validate_identifier(token)?;
+                let (col, desc) = rusvel_schema::parse_order_column_spec(o)?;
+                if !rusvel_schema::SchemaIntrospector::validate_column_for_table(&conn, table, &col)?
+                {
+                    return Err(RusvelError::Validation(format!("unknown column: {col}")));
                 }
-                format!(" ORDER BY {o}")
+                let dir = if desc { "DESC" } else { "ASC" };
+                format!(r#" ORDER BY "{col}" {dir}"#)
             }
             None => String::new(),
         };
@@ -2052,6 +2054,7 @@ impl MetricStore for Database {
 mod tests {
     use super::*;
     use rusvel_core::domain::*;
+    use rusvel_core::error::RusvelError;
     #[allow(unused_imports)]
     use rusvel_core::id::*;
 
@@ -2550,6 +2553,33 @@ mod tests {
         let m = snap.by_model.get("m1").expect("model m1");
         assert!((m.0 - 3.0).abs() < 1e-9);
         assert_eq!(m.1, 40);
+    }
+
+    #[test]
+    fn get_table_rows_order_rejects_comma_injection_style() {
+        let db = test_db();
+        let err = db
+            .get_table_rows("sessions", 10, 0, Some("id, 1=1"), None)
+            .unwrap_err();
+        assert!(matches!(err, RusvelError::Validation(_)));
+    }
+
+    #[test]
+    fn get_table_rows_order_accepts_known_column() {
+        let db = test_db();
+        let r = db
+            .get_table_rows("sessions", 10, 0, Some("name.desc"), None)
+            .unwrap();
+        assert_eq!(r.row_count, 0);
+    }
+
+    #[test]
+    fn get_table_rows_order_unknown_column_errors() {
+        let db = test_db();
+        let err = db
+            .get_table_rows("sessions", 10, 0, Some("not_a_column"), None)
+            .unwrap_err();
+        assert!(matches!(err, RusvelError::Validation(_)));
     }
 
     // ── StoragePort trait object ──────────────────────────────────
