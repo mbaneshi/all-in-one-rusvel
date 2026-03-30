@@ -152,6 +152,43 @@
 		</p>
 	</div>
 
+	{#if llmReport}
+		<div
+			class="rounded-lg border p-4 {llmReport.claude_effective_transport === 'api'
+				? 'border-destructive/40 bg-destructive/10'
+				: 'border-emerald-500/40 bg-emerald-500/10'}"
+		>
+			<p class="text-sm font-medium text-foreground">
+				This running server sends <code class="rounded bg-muted px-1 font-mono text-xs">claude/…</code> to
+				{#if llmReport.claude_effective_transport === 'cli'}
+					<strong>Claude CLI</strong> (<code class="rounded bg-muted px-1 text-xs">claude -p</code> — subscription
+					/ Max).
+				{:else}
+					<strong>Anthropic Messages API</strong> (billing on your API key).
+				{/if}
+			</p>
+			<p class="mt-2 text-xs text-muted-foreground leading-relaxed">
+				That choice is made at <strong>server start</strong> from environment variables — not from picking a
+				model or Save here. Changing the dropdown only changes which model id is requested from whichever
+				backend is already registered.
+			</p>
+			{#if llmReport.claude_effective_transport === 'api'}
+				<p class="mt-2 text-xs text-foreground/90 leading-relaxed">
+					If chat shows <strong>credit balance</strong> errors: add API credits, or set
+					<code class="rounded bg-muted px-1 font-mono">RUSVEL_USE_CLAUDE_CLI=1</code> and
+					<strong>restart Rusvel</strong> to force CLI while keeping
+					<code class="rounded bg-muted px-1">ANTHROPIC_API_KEY</code> in your environment, or remove the key
+					and restart.
+				</p>
+			{/if}
+			{#if llmReport.claude_cli_forced_by_env}
+				<p class="mt-2 text-xs text-emerald-700 dark:text-emerald-300">
+					<code class="rounded bg-muted px-1">RUSVEL_USE_CLAUDE_CLI</code> is forcing CLI despite an API key.
+				</p>
+			{/if}
+		</div>
+	{/if}
+
 	<div class="rounded-xl border border-amber-500/35 bg-amber-500/5 p-4">
 		<h3 class="text-sm font-semibold text-amber-800 dark:text-amber-200">Ollama &amp; agent tools</h3>
 		<p class="mt-2 text-xs text-foreground/90 leading-relaxed">
@@ -176,7 +213,9 @@
 					Two rows for Claude: <strong>Anthropic API</strong> (key) vs
 					<strong>Claude CLI</strong> (<code class="rounded bg-muted px-0.5">claude -p</code>, like
 					Cursor in the terminal). Only one backs <code class="rounded bg-muted px-0.5">claude/…</code>
-					at boot — API if the key is set, otherwise CLI. Ollama/Cursor/OpenAI are probed where cheap.
+					at boot — API if <code class="rounded bg-muted px-0.5">ANTHROPIC_API_KEY</code> is non-empty,
+					unless <code class="rounded bg-muted px-0.5">RUSVEL_USE_CLAUDE_CLI=1</code>. Ollama/Cursor/OpenAI
+					are probed where cheap.
 				</p>
 			</div>
 			<button

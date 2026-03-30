@@ -23,7 +23,7 @@
 	] as const;
 </script>
 
-<div class="min-h-full border-b border-border bg-gradient-to-b from-card/80 to-background">
+<div class="border-b border-border bg-gradient-to-b from-card/80 to-background">
 	<div class="mx-auto max-w-4xl px-4 pt-6 sm:px-6">
 		<p class="text-[11px] font-medium uppercase tracking-widest text-muted-foreground">Workspace</p>
 		<h1 class="mt-1 text-2xl font-bold tracking-tight text-foreground">Settings</h1>

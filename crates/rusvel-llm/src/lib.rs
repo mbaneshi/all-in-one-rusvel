@@ -8,6 +8,7 @@
 
 mod claude;
 mod claude_cli;
+mod claude_routing;
 pub mod cost;
 mod cost_tracking;
 mod cursor_agent;
@@ -20,6 +21,7 @@ mod tier_routing;
 
 pub use claude::ClaudeProvider;
 pub use claude_cli::ClaudeCliProvider;
+pub use claude_routing::{claude_cli_forced_by_env, claude_transport_is_cli};
 pub use cost::{LLM_COST_METRIC_NAME, SpendAggregation, aggregate_spend};
 pub use cost_tracking::CostTrackingLlm;
 pub use cursor_agent::CursorAgentProvider;

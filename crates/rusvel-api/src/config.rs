@@ -15,6 +15,7 @@ use tokio::time::timeout;
 use tracing::info;
 
 use rusvel_core::ports::StoragePort;
+use rusvel_llm::{claude_cli_forced_by_env, claude_transport_is_cli};
 
 use crate::AppState;
 
@@ -305,6 +306,10 @@ pub struct LlmProvidersReport {
     pub ollama_host: String,
     /// Names from `GET /api/tags` when reachable.
     pub ollama_models: Vec<String>,
+    /// Actual backend for `claude/…` on this running process (`cli` = `claude -p`, `api` = Messages API).
+    pub claude_effective_transport: String,
+    /// True when `RUSVEL_USE_CLAUDE_CLI` forced CLI despite a present API key.
+    pub claude_cli_forced_by_env: bool,
 }
 
 async fn probe_cli(cmd: &str, args: &[&str]) -> Option<bool> {
@@ -363,19 +368,41 @@ pub async fn llm_providers_status() -> Json<LlmProvidersReport> {
     let anthropic_raw = std::env::var("ANTHROPIC_API_KEY").unwrap_or_default();
     let anthropic_key = !anthropic_raw.trim().is_empty();
 
+    let effective_claude_cli = claude_transport_is_cli();
+    let claude_forced_cli = claude_cli_forced_by_env();
+
     let mut claude_cli_ok = probe_cli("claude", &["--version"]).await;
     if claude_cli_ok != Some(true) {
         claude_cli_ok = probe_cli("claude", &["-h"]).await;
     }
     let claude_cli_detail = match claude_cli_ok {
         Some(true) => Some(
-            "At boot, if ANTHROPIC_API_KEY is unset, `claude/…` is served via `claude -p` (terminal — same idea as `cursor/…` via Cursor CLI). Subscription / Claude Code Max."
-                .into(),
+            if effective_claude_cli {
+                if claude_forced_cli {
+                    "This process routes `claude/…` through `claude -p` because RUSVEL_USE_CLAUDE_CLI is set (even if ANTHROPIC_API_KEY exists)."
+                } else {
+                    "This process routes `claude/…` through `claude -p` (no usable API key at boot). Subscription / Claude Code Max."
+                }
+                .into()
+            } else {
+                "`claude` works on PATH, but this server still uses the Anthropic Messages API for `claude/…` (non-empty ANTHROPIC_API_KEY). Low-credit errors come from the API — set RUSVEL_USE_CLAUDE_CLI=1 and restart Rusvel, or unset the key."
+                    .into()
+            },
         ),
-        Some(false) => {
-            Some("`claude` exited non-zero — check PATH and `claude --version`.".into())
-        }
-        None => Some("Could not run `claude` within 4s (not installed or PATH).".into()),
+        Some(false) => Some(
+            if effective_claude_cli {
+                "`claude` failed — fix install/PATH; this server expects CLI for `claude/…`.".into()
+            } else {
+                "`claude` exited non-zero — only needed if you switch to CLI routing.".into()
+            },
+        ),
+        None => Some(
+            if effective_claude_cli {
+                "Could not run `claude` within 4s — required for `claude/…` on this server.".into()
+            } else {
+                "Could not probe `claude` within 4s (optional while using API).".into()
+            },
+        ),
     };
 
     let openai_key = std::env::var("OPENAI_API_KEY")
@@ -402,7 +429,7 @@ pub async fn llm_providers_status() -> Json<LlmProvidersReport> {
             },
             healthy: None,
             detail: Some(
-                "At server boot: if set, all `claude/…` traffic uses the Messages API. Billing is checked on first request; no live probe."
+                "Saving `claude/…` in the UI only sets the model id — it does not switch API vs CLI. Backend is fixed at server boot: non-empty key → Messages API unless RUSVEL_USE_CLAUDE_CLI=1. Billing errors mean the API rejected the key/account."
                     .into(),
             ),
         },
@@ -455,6 +482,12 @@ pub async fn llm_providers_status() -> Json<LlmProvidersReport> {
         providers,
         ollama_host: ollama_base,
         ollama_models,
+        claude_effective_transport: if effective_claude_cli {
+            "cli".into()
+        } else {
+            "api".into()
+        },
+        claude_cli_forced_by_env: claude_forced_cli,
     })
 }
 

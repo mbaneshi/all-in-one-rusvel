@@ -254,6 +254,10 @@ export interface LlmProvidersReport {
 	providers: LlmProviderStatusRow[];
 	ollama_host: string;
 	ollama_models: string[];
+	/** Running server: `claude/…` goes to Messages API or `claude -p`. */
+	claude_effective_transport: 'api' | 'cli';
+	/** True when RUSVEL_USE_CLAUDE_CLI overrode a present API key. */
+	claude_cli_forced_by_env: boolean;
 }
 
 export async function getLlmProviders(): Promise<LlmProvidersReport> {
