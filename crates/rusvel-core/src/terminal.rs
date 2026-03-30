@@ -33,6 +33,8 @@ pub enum WindowSource {
 #[serde(tag = "type", content = "value")]
 pub enum PaneSource {
     Shell,
+    /// Session-scoped transcript for job/flow inject lines (`sleep` PTY; prefer read-only WS).
+    SessionLog,
     /// Pane tied to a department (e.g. dept panel terminal).
     Department(String),
     AgentTool {

@@ -148,6 +148,18 @@
 									{/if}
 								</a>
 							{/if}
+							{#if job.terminal_context_snippet?.trim()}
+								<details class="mt-2">
+									<summary
+										class="cursor-pointer text-[10px] font-medium text-muted-foreground hover:text-foreground"
+									>
+										Terminal context (scrollback snapshot)
+									</summary>
+									<pre
+										class="mt-1 max-h-40 overflow-auto rounded-md border border-border bg-muted/30 p-2 font-mono text-[10px] leading-relaxed text-foreground whitespace-pre-wrap break-all"
+									>{job.terminal_context_snippet}</pre>
+								</details>
+							{/if}
 							{#if rows.length > 0}
 								<dl
 									class="mt-3 grid gap-x-4 gap-y-1 text-[11px] sm:grid-cols-[minmax(0,7rem)_1fr]"

@@ -47,6 +47,7 @@ impl TuiTerminalPane {
 fn format_pane_source(s: &PaneSource) -> String {
     match s {
         PaneSource::Shell => "shell".into(),
+        PaneSource::SessionLog => "session-log".into(),
         PaneSource::Department(id) => format!("department({id})"),
         PaneSource::AgentTool { run_id } => format!("agent-tool({run_id})"),
         PaneSource::Delegation {

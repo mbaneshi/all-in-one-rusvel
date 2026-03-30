@@ -5,7 +5,11 @@
 	import { terminalPaneResizeUrl, terminalWebSocketUrl } from '$lib/clientTerminalApi';
 	import '@xterm/xterm/css/xterm.css';
 
-	let { runId, apiOrigin = '' }: { runId: string; apiOrigin?: string } = $props();
+	let {
+		runId,
+		apiOrigin = '',
+		readOnly = false
+	}: { runId: string; apiOrigin?: string; readOnly?: boolean } = $props();
 
 	let termEl: HTMLDivElement;
 	let term: Terminal | null = null;
@@ -50,9 +54,10 @@
 			const u = new URL(base);
 			const wsProto = u.protocol === 'https:' ? 'wss:' : 'ws:';
 			const qp = new URLSearchParams({ pane_id: id });
+			if (readOnly) qp.set('read_only', 'true');
 			return `${wsProto}//${u.host}/api/terminal/ws?${qp.toString()}`;
 		}
-		return terminalWebSocketUrl(id);
+		return terminalWebSocketUrl(id, readOnly);
 	}
 
 	function disconnectWs() {

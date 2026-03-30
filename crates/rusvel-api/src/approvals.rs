@@ -26,11 +26,19 @@ pub struct PendingApprovalItem {
     pub terminal_window_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub terminal_dept_id: Option<String>,
+    /// Last lines of the linked dept pane scrollback when the job entered approval (bounded).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub terminal_context_snippet: Option<String>,
 }
 
 fn approval_terminal_fields(
     meta: &serde_json::Value,
-) -> (Option<String>, Option<String>, Option<String>) {
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
     let obj = meta.as_object();
     let g = |k: &str| {
         obj
@@ -38,10 +46,12 @@ fn approval_terminal_fields(
             .and_then(|v| v.as_str())
             .map(std::string::ToString::to_string)
     };
+    let snippet = g("terminal_context_snippet").filter(|s| !s.trim().is_empty());
     (
         g("terminal_pane_id"),
         g("terminal_window_id"),
         g("terminal_dept_id"),
+        snippet,
     )
 }
 
@@ -65,13 +75,18 @@ pub async fn list_pending(
     let out: Vec<PendingApprovalItem> = jobs
         .into_iter()
         .map(|job| {
-            let (terminal_pane_id, terminal_window_id, terminal_dept_id) =
-                approval_terminal_fields(&job.metadata);
+            let (
+                terminal_pane_id,
+                terminal_window_id,
+                terminal_dept_id,
+                terminal_context_snippet,
+            ) = approval_terminal_fields(&job.metadata);
             PendingApprovalItem {
                 job,
                 terminal_pane_id,
                 terminal_window_id,
                 terminal_dept_id,
+                terminal_context_snippet,
             }
         })
         .collect();
