@@ -1675,6 +1675,14 @@ export interface FlowNodeResult {
 
 export type FlowExecutionStatus = 'Queued' | 'Running' | 'Succeeded' | 'Failed' | 'Cancelled';
 
+/** Server-filled when a flow is started from the job worker (cron / automation job). */
+export interface RusvelTriggerProvenance {
+	job_id?: string;
+	trigger?: string;
+	schedule_id?: string;
+	event_kind?: string;
+}
+
 export interface FlowExecution {
 	id: string;
 	flow_id: string;
@@ -1685,6 +1693,29 @@ export interface FlowExecution {
 	finished_at?: string | null;
 	error?: string | null;
 	metadata?: Record<string, unknown>;
+}
+
+export function rusvelProvenanceFromFlowExecution(
+	ex: FlowExecution
+): RusvelTriggerProvenance | undefined {
+	const td = ex.trigger_data;
+	if (td && typeof td === 'object' && td !== null && 'rusvel' in td) {
+		const r = (td as Record<string, unknown>).rusvel;
+		if (r && typeof r === 'object' && r !== null) {
+			return r as RusvelTriggerProvenance;
+		}
+	}
+	return undefined;
+}
+
+export function rusvelProvenanceFromPlaybookRun(
+	run: PlaybookRunListItem
+): RusvelTriggerProvenance | undefined {
+	const m = run.metadata?.rusvel;
+	if (m && typeof m === 'object' && m !== null) {
+		return m as RusvelTriggerProvenance;
+	}
+	return undefined;
 }
 
 export async function getFlows(): Promise<FlowDef[]> {
@@ -1784,6 +1815,7 @@ export interface PlaybookRunListItem {
 	started_at?: string;
 	completed_at?: string | null;
 	error?: string | null;
+	metadata?: Record<string, unknown>;
 }
 
 export async function getPlaybookRunsList(): Promise<PlaybookRunListItem[]> {

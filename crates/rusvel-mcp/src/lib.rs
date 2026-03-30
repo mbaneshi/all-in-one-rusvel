@@ -352,7 +352,12 @@ impl RusvelMcp {
                     variables: vars,
                     department_id,
                 };
-                let out = rusvel_api::automation::dispatch_automation_trigger(app, sid, trigger)
+                let out = rusvel_api::automation::dispatch_automation_trigger(
+                    app,
+                    sid,
+                    trigger,
+                    None,
+                )
                     .await
                     .map_err(|e| McpError::Engine(RusvelError::Validation(e)))?;
                 serde_json::to_value(out).map_err(McpError::Json)?
@@ -379,7 +384,12 @@ impl RusvelMcp {
                     variables: vars,
                     department_id: None,
                 };
-                let out = rusvel_api::automation::dispatch_automation_trigger(app, sid, trigger)
+                let out = rusvel_api::automation::dispatch_automation_trigger(
+                    app,
+                    sid,
+                    trigger,
+                    None,
+                )
                     .await
                     .map_err(|e| McpError::Engine(RusvelError::Validation(e)))?;
                 serde_json::to_value(out).map_err(McpError::Json)?

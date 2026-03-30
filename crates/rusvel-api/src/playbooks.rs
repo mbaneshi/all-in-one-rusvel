@@ -544,6 +544,17 @@ pub async fn start_playbook_run(
         .await
         .ok_or_else(|| format!("playbook not found: {playbook_id}"))?;
     let run_id = uuid::Uuid::now_v7().to_string();
+
+    let mut initial = variables;
+    if !initial.is_object() {
+        initial = json!({});
+    }
+
+    let mut run_meta = json!({});
+    if let Some(rv) = initial.get("rusvel") {
+        run_meta["rusvel"] = rv.clone();
+    }
+
     let run = PlaybookRun {
         id: run_id.clone(),
         playbook_id: playbook.id.clone(),
@@ -552,7 +563,7 @@ pub async fn start_playbook_run(
         started_at: Utc::now(),
         completed_at: None,
         error: None,
-        metadata: serde_json::Value::default(),
+        metadata: run_meta,
     };
     run_store()
         .runs
@@ -560,10 +571,6 @@ pub async fn start_playbook_run(
         .map_err(|_| "playbook run store poisoned".to_string())?
         .insert(run_id.clone(), run.clone());
 
-    let mut initial = variables;
-    if !initial.is_object() {
-        initial = json!({});
-    }
     spawn_run_with_context(state, run, playbook, initial);
     Ok(run_id)
 }

@@ -35,6 +35,50 @@ use crate::AppState;
 use crate::playbooks;
 use crate::secrets;
 
+/// Reserved object key on flow `trigger_data` / playbook variables for job correlation (filled by the worker).
+pub const RUSVEL_TRIGGER_KEY: &str = "rusvel";
+
+/// Who started this automation run; merged into `trigger_data` / variables under [`RUSVEL_TRIGGER_KEY`].
+#[derive(Debug, Clone)]
+pub struct AutomationProvenance {
+    pub job_id: String,
+    pub trigger: String,
+    pub schedule_id: Option<String>,
+    pub event_kind: Option<String>,
+}
+
+/// Shallow-merge: existing `rusvel` keys are kept except server fields always overwrite.
+pub fn merge_rusvel_provenance(td: &mut Value, provenance: Option<&AutomationProvenance>) {
+    let Some(p) = provenance else {
+        return;
+    };
+    if !td.is_object() {
+        *td = json!({});
+    }
+    let Some(obj) = td.as_object_mut() else {
+        return;
+    };
+    let mut merged = serde_json::Map::new();
+    if let Some(Value::Object(existing)) = obj.get(RUSVEL_TRIGGER_KEY) {
+        for (k, v) in existing {
+            merged.insert(k.clone(), v.clone());
+        }
+    }
+    merged.insert("job_id".into(), json!(p.job_id));
+    merged.insert("trigger".into(), json!(p.trigger));
+    if let Some(ref s) = p.schedule_id {
+        if !s.is_empty() {
+            merged.insert("schedule_id".into(), json!(s));
+        }
+    }
+    if let Some(ref e) = p.event_kind {
+        if !e.is_empty() {
+            merged.insert("event_kind".into(), json!(e));
+        }
+    }
+    obj.insert(RUSVEL_TRIGGER_KEY.into(), Value::Object(merged));
+}
+
 /// If `event_kind` is our automation cron kind, or `inner` looks like an automation payload, parse it.
 pub fn parse_automation_trigger_from_cron(
     event_kind: &str,
@@ -55,7 +99,9 @@ pub async fn dispatch_automation_trigger(
     state: Arc<AppState>,
     _session_id: SessionId,
     trigger: AutomationTriggerPayload,
+    provenance: Option<AutomationProvenance>,
 ) -> Result<Value, String> {
+    let prov = provenance.as_ref();
     match trigger.action {
         AutomationTriggerAction::RunFlow => {
             let engine = state
@@ -72,6 +118,7 @@ pub async fn dispatch_automation_trigger(
             if !td.is_object() {
                 td = json!({});
             }
+            merge_rusvel_provenance(&mut td, prov);
             td = secrets::resolve_secret_placeholders(state.as_ref(), td).await;
             if let Some(dept) = trigger.department_id.clone() {
                 td.as_object_mut()
@@ -84,7 +131,12 @@ pub async fn dispatch_automation_trigger(
             serde_json::to_value(&execution).map_err(|e| e.to_string())
         }
         AutomationTriggerAction::RunPlaybook => {
-            let vars = secrets::resolve_secret_placeholders(state.as_ref(), trigger.variables).await;
+            let mut vars = trigger.variables;
+            if !vars.is_object() {
+                vars = json!({});
+            }
+            merge_rusvel_provenance(&mut vars, prov);
+            let vars = secrets::resolve_secret_placeholders(state.as_ref(), vars).await;
             let run_id = playbooks::start_playbook_run(state, &trigger.target_id, vars).await?;
             Ok(json!({ "run_id": run_id, "playbook_id": trigger.target_id }))
         }

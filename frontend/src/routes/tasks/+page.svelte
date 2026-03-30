@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { getActiveDashboard, type ActiveDashboardResponse } from '$lib/api';
 	import { activeSession } from '$lib/stores';
 	import { ClipboardList } from 'lucide-svelte';
@@ -9,6 +10,8 @@
 
 	let sessionId = $state<string | null>(null);
 	activeSession.subscribe((s) => (sessionId = s?.id ?? null));
+
+	const highlightJobId = $derived(page.url.searchParams.get('job')?.trim() ?? '');
 
 	async function load() {
 		loading = true;
@@ -26,6 +29,14 @@
 	$effect(() => {
 		void sessionId;
 		void load();
+	});
+
+	$effect(() => {
+		if (!highlightJobId || loading || !data?.jobs.length) return;
+		queueMicrotask(() => {
+			const el = document.getElementById(`job-row-${highlightJobId}`);
+			el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+		});
 	});
 </script>
 
@@ -62,7 +73,10 @@
 				<ul class="space-y-2 text-sm">
 					{#each data.jobs as j}
 						<li
-							class="rounded-lg border border-border bg-card px-3 py-2 font-mono text-xs"
+							id="job-row-{j.id}"
+							class="rounded-lg border bg-card px-3 py-2 font-mono text-xs {highlightJobId === j.id
+								? 'border-primary ring-2 ring-primary/40'
+								: 'border-border'}"
 						>
 							<span class="text-foreground">{j.kind}</span>
 							<span class="mx-2 text-muted-foreground">·</span>

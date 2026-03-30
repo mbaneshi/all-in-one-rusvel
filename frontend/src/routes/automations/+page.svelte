@@ -8,6 +8,8 @@
 		getRecentFlowExecutions,
 		getWebhooksList,
 		listAutomationSecrets,
+		rusvelProvenanceFromFlowExecution,
+		rusvelProvenanceFromPlaybookRun,
 		type CronScheduleSummary,
 		type FlowDef,
 		type FlowExecution,
@@ -72,6 +74,10 @@
 	function flowNameForExecution(flowId: string): string {
 		const fl = flows.find((x) => x.id === flowId);
 		return fl?.name ?? flowId.slice(0, 8);
+	}
+
+	function tasksJobHref(jobId: string): string {
+		return `/tasks?job=${encodeURIComponent(jobId)}`;
 	}
 </script>
 
@@ -237,15 +243,30 @@
 								<tr class="border-b border-border text-muted-foreground">
 									<th class="py-2 pr-2 font-medium">Flow</th>
 									<th class="py-2 pr-2 font-medium">Status</th>
+									<th class="py-2 pr-2 font-medium">Job</th>
 									<th class="py-2 pr-2 font-medium">Started</th>
 									<th class="py-2 pr-2 font-medium">Execution id</th>
 								</tr>
 							</thead>
 							<tbody>
 								{#each flowExecutions as ex}
+									{@const prov = rusvelProvenanceFromFlowExecution(ex)}
 									<tr class="border-b border-border/60">
 										<td class="py-2 pr-2 text-foreground">{flowNameForExecution(ex.flow_id)}</td>
 										<td class="py-2 pr-2">{ex.status}</td>
+										<td class="py-2 pr-2">
+											{#if prov?.job_id}
+												<a
+													href={tasksJobHref(prov.job_id)}
+													class="font-mono text-primary hover:underline"
+												>{prov.job_id.slice(0, 8)}…</a>
+												{#if prov.trigger}
+													<span class="text-muted-foreground"> · {prov.trigger}</span>
+												{/if}
+											{:else}
+												<span class="text-muted-foreground">—</span>
+											{/if}
+										</td>
 										<td class="py-2 pr-2 font-mono text-muted-foreground">{ex.started_at}</td>
 										<td class="py-2 pr-2 font-mono text-muted-foreground">{ex.id}</td>
 									</tr>
@@ -263,9 +284,16 @@
 				{:else}
 					<ul class="space-y-2 text-sm">
 						{#each runs as run}
+							{@const pbr = rusvelProvenanceFromPlaybookRun(run)}
 							<li class="rounded border border-border/80 px-2 py-1 font-mono text-xs">
 								<span class="text-foreground">{run.playbook_id}</span>
 								<span class="text-muted-foreground"> · {run.status} · {run.id}</span>
+								{#if pbr?.job_id}
+									<span class="text-muted-foreground"> · job</span>
+									<a href={tasksJobHref(pbr.job_id)} class="text-primary hover:underline"
+										>{pbr.job_id.slice(0, 8)}…</a
+									>
+								{/if}
 							</li>
 						{/each}
 					</ul>

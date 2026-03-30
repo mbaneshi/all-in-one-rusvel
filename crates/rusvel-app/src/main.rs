@@ -1508,12 +1508,24 @@ async fn main() -> Result<()> {
                                     &payload,
                                 )
                             {
+                                let automation_provenance =
+                                    rusvel_api::automation::AutomationProvenance {
+                                        job_id: job_id.to_string(),
+                                        trigger: "cron".into(),
+                                        schedule_id: if schedule_id.is_empty() {
+                                            None
+                                        } else {
+                                            Some(schedule_id.to_string())
+                                        },
+                                        event_kind: Some(event_kind.clone()),
+                                    };
                                 match rusvel_api::automation::worker_app_state() {
                                     Some(api_state) => {
                                         match rusvel_api::automation::dispatch_automation_trigger(
                                             api_state,
                                             job.session_id,
                                             trigger,
+                                            Some(automation_provenance),
                                         )
                                         .await
                                         {
@@ -1594,12 +1606,20 @@ async fn main() -> Result<()> {
                                 });
                             match trigger_res {
                                 Ok(trigger) => {
+                                    let automation_provenance =
+                                        rusvel_api::automation::AutomationProvenance {
+                                            job_id: job_id.to_string(),
+                                            trigger: "automation_job".into(),
+                                            schedule_id: None,
+                                            event_kind: None,
+                                        };
                                     match rusvel_api::automation::worker_app_state() {
                                         Some(api_state) => {
                                             match rusvel_api::automation::dispatch_automation_trigger(
                                                 api_state,
                                                 job.session_id,
                                                 trigger,
+                                                Some(automation_provenance),
                                             )
                                             .await
                                             {

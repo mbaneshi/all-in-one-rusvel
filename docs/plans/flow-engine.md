@@ -4,6 +4,26 @@
 
 > Original proposal below (DAG-based workflow engine with visual builder, triggers, conditionals, and error handling — all within the single-binary constraint).
 
+## Parameter templates (MiniJinja)
+
+Node `parameters` JSON is walked recursively; **string leaves** that contain `{{ … }}` are rendered with [MiniJinja](https://github.com/mitsuhiko/minijinja) against a per-node context built in [`flow_parameter_context`](../../crates/flow-engine/src/expressions.rs):
+
+| Source | In template context |
+|--------|---------------------|
+| Flow run `trigger_data` | Each **top-level object key** is a variable (e.g. `department_id`, `rusvel`). |
+| Upstream node outputs | **Flat:** each upstream node UUID string → that node’s output JSON. |
+| Nested aliases | `flow_trigger` — full trigger object. `upstream` — map of upstream node id → output. |
+
+Examples (string parameters):
+
+- `{{ department_id }}` — from trigger.
+- `{{ flow_trigger.rusvel.job_id }}` — when the worker set [`trigger_data.rusvel`](../../crates/rusvel-api/src/automation.rs) (cron / automation job).
+- `{{ upstream["<node-uuid>"].field }}` — drill into a predecessor output (use the node’s id string).
+
+If rendering fails, the **original string is kept**. Set **`RUSVEL_FLOW_TEMPLATE_DEBUG=1`** to log template errors at `warn` (operator troubleshooting).
+
+Legacy `{{node_id}}` resolution for some string templates lives in [`expression.rs`](../../crates/flow-engine/src/expression.rs); prefer MiniJinja + the context above for new flows.
+
 ## Motivation
 
 n8n's power comes from three things: (1) visual node graph, (2) rich node type system, (3) event-driven triggers. The current workflow system (`crates/rusvel-agent/src/workflow.rs`) only supports `Sequential | Parallel | Loop | Agent` — no conditionals, no triggers, no branching, no error paths. The API layer (`rusvel-api/src/workflows.rs`) stores flat step lists with `agent_name + prompt_template`. This is Phase 0 scaffolding. RUSVEL Flow is Phase 1.

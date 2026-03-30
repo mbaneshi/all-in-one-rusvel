@@ -18,10 +18,27 @@
 	let workflowResults: WorkflowRunResult | null = $state(null);
 	let showConfetti = $state(false);
 
+	const LEGACY_BANNER_KEY = 'rusvel_agent_chains_legacy_banner_dismissed';
+	let legacyBannerDismissed = $state(false);
+
 	onMount(() => {
 		loadWorkflows();
 		loadAgents();
+		try {
+			legacyBannerDismissed = localStorage.getItem(LEGACY_BANNER_KEY) === '1';
+		} catch {
+			/* ignore */
+		}
 	});
+
+	function dismissLegacyBanner() {
+		legacyBannerDismissed = true;
+		try {
+			localStorage.setItem(LEGACY_BANNER_KEY, '1');
+		} catch {
+			/* ignore */
+		}
+	}
 
 	async function loadWorkflows() {
 		try {
@@ -88,6 +105,34 @@
 </script>
 
 <div class="p-3 space-y-2">
+	{#if !legacyBannerDismissed}
+		<div
+			class="relative rounded-lg border border-amber-500/35 bg-amber-500/10 p-2.5 text-[11px] leading-snug text-foreground"
+			role="status"
+		>
+			<button
+				type="button"
+				class="absolute right-2 top-2 rounded px-1 text-muted-foreground hover:bg-background/80 hover:text-foreground"
+				onclick={dismissLegacyBanner}
+				aria-label="Dismiss">×</button
+			>
+			<p class="pr-6 font-medium text-amber-200/95">Agent chains (legacy)</p>
+			<p class="mt-1 text-muted-foreground">
+				Linear workflows here use <code class="rounded bg-background/50 px-0.5 font-mono text-[10px]"
+					>/api/workflows</code
+				>
+				and the Claude CLI-oriented runner. For DAG automations, schedules, and webhooks, use
+				<a href="/flows" class="text-primary underline">Flows</a>
+				and the
+				<a href="/automations" class="text-primary underline">Automations</a>
+				hub. Migration notes:
+				<code class="mt-0.5 block truncate font-mono text-[10px] text-muted-foreground"
+					>docs/design/workflow-migration-automation.md</code
+				>
+			</p>
+		</div>
+	{/if}
+
 	<button
 		onclick={() => (showCreate = !showCreate)}
 		class="w-full rounded-lg border border-dashed border-border py-1.5 text-xs text-muted-foreground hover:border-[hsl({deptHsl}/.3)] hover:text-foreground"

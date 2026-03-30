@@ -34,6 +34,10 @@ Department shell tab **`workflows`** (path `/dept/:id/workflows`) is labeled **A
 
 The **`/automations`** page lists recent **flow** executions via **`GET /api/flows/executions/recent?limit=`** (one object-store scan in `flow-engine`, sorted by `started_at`). Per-flow history remains **`GET /api/flows/{id}/executions`**. **Playbook** runs use **`GET /api/playbooks/runs`**.
 
+## Job correlation (`trigger_data.rusvel`)
+
+When a flow or playbook is started from the **job worker** (cron automation or `JobKind::Custom` `rusvel.automation.dispatch`), the API merges a reserved object under **`rusvel`**: `job_id`, `trigger` (`cron` | `automation_job`), optional `schedule_id`, optional `event_kind`. It appears on **flow** runs as **`trigger_data.rusvel`** and on **playbook** runs in **`metadata.rusvel`**. The UI links to **`/tasks?job=<job_id>`** for active jobs.
+
 ## MCP parity
 
 Tools `automation_run_flow`, `automation_run_playbook`, and `automation_upsert_cron_schedule` use the same dispatcher and cron shape as HTTP. Stdio MCP requires the HTTP router to have registered `AppState` via `register_app_state_for_worker` (start the API server or use streamable HTTP MCP).
