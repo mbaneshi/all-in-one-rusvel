@@ -755,6 +755,64 @@ style = "direct"
 }
 
 // ════════════════════════════════════════════════════════════════════
+//  HTTP bind + security warnings (audit P0-A)
+// ════════════════════════════════════════════════════════════════════
+
+fn http_listen_addr() -> anyhow::Result<SocketAddr> {
+    match std::env::var("RUSVEL_HTTP_ADDR") {
+        Ok(s) if !s.trim().is_empty() => s
+            .trim()
+            .parse()
+            .map_err(|e| anyhow::anyhow!("RUSVEL_HTTP_ADDR: invalid address: {e}")),
+        _ => "127.0.0.1:3000"
+            .parse()
+            .map_err(|e| anyhow::anyhow!("default listen addr: {e}")),
+    }
+}
+
+fn warn_open_api_exposure(addr: &SocketAddr, auth: &rusvel_api::auth::AuthConfig) {
+    let tokens_unset = auth.token.is_none() && auth.read_token.is_none();
+    if !tokens_unset {
+        return;
+    }
+    if std::env::var("RUSVEL_ALLOW_INSECURE_API")
+        .ok()
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+    {
+        tracing::warn!(
+            "RUSVEL_ALLOW_INSECURE_API=1: accepting /api/* without bearer tokens (lab mode only)"
+        );
+        return;
+    }
+    if !addr.ip().is_loopback() {
+        tracing::warn!(
+            target: "rusvel_security",
+            "HTTP bound to {} with no RUSVEL_API_TOKEN or RUSVEL_API_READ_TOKEN — /api/* is network-open. Set tokens or use loopback (127.0.0.1) or RUSVEL_ALLOW_INSECURE_API=1 only on trusted networks.",
+            addr
+        );
+    } else {
+        tracing::info!(
+            "API bearer auth disabled (no RUSVEL_API_* tokens); loopback bind — OK for local dev"
+        );
+    }
+}
+
+fn warn_mcp_http_exposure(addr: &SocketAddr) {
+    let auth = rusvel_mcp::http::McpAuth::from_env();
+    if auth.enabled {
+        return;
+    }
+    if !addr.ip().is_loopback() {
+        tracing::warn!(
+            target: "rusvel_security",
+            "MCP HTTP at /mcp has no bearer auth (set RUSVEL_MCP_HTTP_AUTH=1 and RUSVEL_MCP_HTTP_TOKEN). Exposed on non-loopback address {}.",
+            addr
+        );
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════
 //  Main
 // ════════════════════════════════════════════════════════════════════
 
@@ -763,20 +821,32 @@ async fn main() -> Result<()> {
     // 1. Parse CLI first so --help / --version exit instantly (no boot noise)
     let cli = Cli::parse();
 
-    // 2. Tracing
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
-        .init();
-
-    // 3. Data directory
+    // 2. Data directory + config (needed before tracing for log.level when RUST_LOG unset)
     let data_dir = rusvel_dir();
     std::fs::create_dir_all(&data_dir)?;
-
-    // 3. Concrete adapters
-    let db: Arc<Database> = Arc::new(Database::open(data_dir.join("rusvel.db"))?);
     let config = Arc::new(TomlConfig::load(data_dir.join("config.toml"))?);
+
+    // 3. Tracing: RUST_LOG wins; else TOML log.level (P3-B)
+    let log_filter = if std::env::var("RUST_LOG")
+        .map(|v| !v.trim().is_empty())
+        .unwrap_or(false)
+    {
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"))
+    } else {
+        let level = config
+            .get_value("log.level")
+            .ok()
+            .flatten()
+            .and_then(|v| v.as_str().map(str::to_string))
+            .unwrap_or_else(|| "info".to_string());
+        EnvFilter::new(level)
+    };
+    tracing_subscriber::fmt()
+        .with_env_filter(log_filter)
+        .init();
+
+    // 4. Concrete adapters
+    let db: Arc<Database> = Arc::new(Database::open(data_dir.join("rusvel.db"))?);
     let llm_multi = llm_bootstrap::compose_llm_multi();
     let base_llm: Arc<dyn rusvel_core::ports::LlmPort> = Arc::new(llm_multi);
     let metrics_store: Arc<dyn MetricStore> = db.clone() as Arc<dyn MetricStore>;
@@ -1631,7 +1701,10 @@ async fn main() -> Result<()> {
         let mcp_srv = Arc::new(RusvelMcp::new(forge.clone(), sessions.clone()));
         let router =
             rusvel_mcp::http::nest_mcp_http(base, mcp_srv, rusvel_mcp::http::McpAuth::from_env());
-        let addr: SocketAddr = "127.0.0.1:3000".parse()?;
+        let addr = http_listen_addr()?;
+        let api_auth = rusvel_api::auth::AuthConfig::from_env();
+        warn_open_api_exposure(&addr, &api_auth);
+        warn_mcp_http_exposure(&addr);
         tracing::info!("RUSVEL starting on http://{addr} (MCP HTTP)");
 
         let _cron_tick_task_mcp_http = cron_scheduler
@@ -1762,7 +1835,10 @@ async fn main() -> Result<()> {
             tracing::warn!("No frontend found — UI will not be available");
         }
         let router = rusvel_api::build_router_with_frontend(state, frontend_dir);
-        let addr: SocketAddr = "127.0.0.1:3000".parse()?;
+        let addr = http_listen_addr()?;
+        let api_auth = rusvel_api::auth::AuthConfig::from_env();
+        warn_open_api_exposure(&addr, &api_auth);
+        warn_mcp_http_exposure(&addr);
         tracing::info!("RUSVEL starting on http://{addr}");
 
         let _cron_tick_task = cron_scheduler

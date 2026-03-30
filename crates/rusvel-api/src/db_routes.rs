@@ -35,6 +35,17 @@ fn default_read_only() -> bool {
     true
 }
 
+/// When `RUSVEL_DB_SQL_WRITE` is `0`, `false`, or `off`, POST `/api/db/sql` always runs with
+/// `PRAGMA query_only = ON` (writes blocked) regardless of client `read_only: false`.
+fn env_disallows_sql_writes() -> bool {
+    std::env::var("RUSVEL_DB_SQL_WRITE")
+        .map(|v| {
+            let v = v.trim();
+            v == "0" || v.eq_ignore_ascii_case("false") || v.eq_ignore_ascii_case("off")
+        })
+        .unwrap_or(false)
+}
+
 #[derive(Serialize)]
 pub struct SqlColumnMeta {
     pub name: String,
@@ -253,15 +264,18 @@ pub async fn post_sql(
     Json(body): Json<SqlBody>,
 ) -> Result<Json<SqlExecuteResponse>, (StatusCode, String)> {
     let db = state.database.clone();
+    let force_read_only = env_disallows_sql_writes();
+    let read_only = force_read_only || body.read_only;
+    let query = body.query;
     tokio::task::spawn_blocking(move || {
         db.with_connection(|conn| {
             let start = Instant::now();
-            if body.read_only {
+            if read_only {
                 conn.execute_batch("PRAGMA query_only = ON;")
                     .map_err(|e| RusvelError::Storage(e.to_string()))?;
             }
-            let res = run_sql(conn, &body.query);
-            if body.read_only {
+            let res = run_sql(conn, &query);
+            if read_only {
                 let _ = conn.execute_batch("PRAGMA query_only = OFF;");
             }
             let (columns, rows, row_count) = res?;
