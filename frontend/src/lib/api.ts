@@ -685,6 +685,10 @@ export interface Job {
 	max_retries: number;
 	error: string | null;
 	metadata: Record<string, unknown>;
+	/** Set on some approval jobs for deep-linking to the department terminal. */
+	terminal_pane_id?: string;
+	terminal_window_id?: string;
+	terminal_dept_id?: string;
 }
 
 export async function getPendingApprovals(): Promise<Job[]> {
@@ -1015,6 +1019,36 @@ export async function postBrowserConnect(
 	return request('/api/browser/connect', {
 		method: 'POST',
 		body: JSON.stringify({ endpoint: endpoint.trim() })
+	});
+}
+
+export async function getBrowserTabs(): Promise<unknown> {
+	return request('/api/browser/tabs');
+}
+
+export async function postBrowserObserve(
+	tabId: string,
+	opts?: { session_id?: string; platform?: string }
+): Promise<{ ok: boolean; tab_id: string; terminal_pane_id?: string }> {
+	const sp = new URLSearchParams();
+	if (opts?.session_id) sp.set('session_id', opts.session_id);
+	if (opts?.platform) sp.set('platform', opts.platform);
+	const q = sp.toString();
+	return request(
+		`/api/browser/observe/${encodeURIComponent(tabId)}${q ? `?${q}` : ''}`,
+		{ method: 'POST' }
+	);
+}
+
+export async function postTerminalDeptTrace(
+	deptId: string,
+	sessionId: string,
+	message: string
+): Promise<void> {
+	const sp = new URLSearchParams({ session_id: sessionId });
+	await request(`/api/terminal/dept/${encodeURIComponent(deptId)}/trace?${sp}`, {
+		method: 'POST',
+		body: JSON.stringify({ message })
 	});
 }
 

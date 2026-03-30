@@ -7,11 +7,14 @@
 
 	let {
 		paneId,
-		apiOrigin = ''
+		apiOrigin = '',
+		readOnly = false
 	}: {
 		paneId: string;
 		/** e.g. `http://localhost:3000` when UI is on :5173 */
 		apiOrigin?: string;
+		/** When true, WebSocket does not forward keystrokes to the PTY (`read_only` query). */
+		readOnly?: boolean;
 	} = $props();
 
 	let termEl: HTMLDivElement;
@@ -50,9 +53,10 @@
 			const u = new URL(base);
 			const wsProto = u.protocol === 'https:' ? 'wss:' : 'ws:';
 			const qp = new URLSearchParams({ pane_id: id });
+			if (readOnly) qp.set('read_only', 'true');
 			return `${wsProto}//${u.host}/api/terminal/ws?${qp.toString()}`;
 		}
-		return terminalWebSocketUrl(id);
+		return terminalWebSocketUrl(id, readOnly);
 	}
 
 	function connect(id: string) {
@@ -66,7 +70,7 @@
 			connected = true;
 			fitAddon?.fit();
 			scheduleResizeNotify();
-			term?.focus();
+			if (!readOnly) term?.focus();
 		};
 
 		ws.onmessage = (ev: MessageEvent) => {

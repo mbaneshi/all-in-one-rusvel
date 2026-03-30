@@ -558,6 +558,10 @@ pub fn build_router_with_frontend(
             get(terminal::terminal_dept_pane),
         )
         .route(
+            "/api/terminal/dept/{dept_id}/trace",
+            axum::routing::post(terminal::terminal_dept_trace),
+        )
+        .route(
             "/api/terminal/runs/{run_id}/panes",
             get(terminal::terminal_run_panes),
         )

@@ -80,6 +80,19 @@ If auth is disabled and the server binds outside loopback, startup logs a `rusve
 |----------|---------|---------|
 | `RUSVEL_JOB_STALE_RUNNING_SECS` | `3600` | On worker startup, `Running` jobs older than this many seconds are marked `Failed`. Set to `0` to disable. |
 
+## Terminal platform (PTY / WebSocket)
+
+| Variable | Purpose |
+|----------|---------|
+| `RUSVEL_TERMINAL_DISABLE` | `1` / `true` — do not start [`TerminalManager`](../../crates/rusvel-terminal); API returns **503** for terminal routes and tools see no PTY. |
+| `RUSVEL_TERMINAL_READ_ONLY` | `1` / `true` — WebSocket clients never call `write_pane` (transcript-only); combine with `read_only=true` on `/api/terminal/ws` for specific viewers. |
+| `RUSVEL_TERMINAL_MAX_PANES` | Max PTY panes per session (default `64`). |
+| `RUSVEL_TERMINAL_ALLOWED_DEPTS` | Comma-separated department ids allowed to open dept panes; when set, other departments get **403**. |
+| `RUSVEL_TERMINAL_CMD_ALLOWLIST` | Comma-separated prefixes; when set, `POST .../window/{id}/pane` `cmd` must start with one of them. |
+| `RUSVEL_TERMINAL_DEFAULT_CWD` | Overrides initial cwd for new dept panes (before per-dept registry `terminal.default_cwd`). |
+
+On non-loopback binds, prefer **`RUSVEL_TERMINAL_DISABLE=1`** unless you fully trust every API client.
+
 ## Config vs logging
 
 | Variable / key | Purpose |

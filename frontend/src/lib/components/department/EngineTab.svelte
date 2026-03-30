@@ -1,12 +1,15 @@
 <script lang="ts">
 	import { activeSession } from '$lib/stores';
+	import DeptTerminal from '$lib/components/DeptTerminal.svelte';
 	import {
 		getBrowserStatus,
+		getBrowserTabs,
 		getCodeSearch,
 		getContentList,
 		getHarvestOpportunities,
 		getHarvestPipeline,
 		postBrowserConnect,
+		postBrowserObserve,
 		postCodeAnalyze,
 		postContentDraft,
 		postForgePipeline,
@@ -31,6 +34,8 @@
 	let harvestQuery = $state('');
 	let cdpEndpoint = $state('http://127.0.0.1:9223');
 	let browserConnected = $state<boolean | null>(null);
+	let browserTabId = $state('');
+	let browserLogPaneId = $state<string | null>(null);
 
 	function showJson(data: unknown) {
 		output = JSON.stringify(data, null, 2);
@@ -148,6 +153,49 @@
 			showJson(r);
 			await refreshBrowserStatus();
 			toast.success('CDP connected');
+		} catch (e) {
+			output = e instanceof Error ? e.message : String(e);
+			toast.error(output);
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function listBrowserTabsJson() {
+		busy = true;
+		output = '';
+		try {
+			const tabs = await getBrowserTabs();
+			showJson(tabs);
+		} catch (e) {
+			output = e instanceof Error ? e.message : String(e);
+			toast.error(output);
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function streamCdpToTerminal() {
+		if (!currentSession) {
+			toast.error('Select a session first');
+			return;
+		}
+		const tab = browserTabId.trim();
+		if (!tab) {
+			toast.error('Enter a Chrome tab id (use List tabs)');
+			return;
+		}
+		busy = true;
+		output = '';
+		try {
+			const r = await postBrowserObserve(tab, { session_id: currentSession.id });
+			showJson(r);
+			if (r.terminal_pane_id) {
+				browserLogPaneId = r.terminal_pane_id;
+				toast.success('CDP events mirrored to a read-only terminal pane');
+			} else {
+				toast.message('Observe started; open /dept/harvest/terminal if no pane id returned');
+			}
 		} catch (e) {
 			output = e instanceof Error ? e.message : String(e);
 			toast.error(output);
@@ -398,6 +446,39 @@
 				>
 					Connect Chrome (CDP)
 				</button>
+				<button
+					type="button"
+					disabled={busy}
+					onclick={() => void listBrowserTabsJson()}
+					class="w-full rounded-md border border-border py-1.5 text-xs font-medium disabled:opacity-50"
+				>
+					List browser tabs (JSON)
+				</button>
+				<label class="block space-y-0.5">
+					<span class="text-muted-foreground">Tab id for log mirror</span>
+					<input
+						bind:value={browserTabId}
+						placeholder="from List tabs → id field"
+						class="w-full rounded border border-border bg-background px-2 py-1 font-mono text-[10px]"
+					/>
+				</label>
+				<button
+					type="button"
+					disabled={busy || !currentSession}
+					onclick={() => void streamCdpToTerminal()}
+					class="w-full rounded-md py-1.5 text-xs font-medium text-white disabled:opacity-50"
+					style="background: hsl({deptHsl})"
+				>
+					Stream CDP to terminal pane
+				</button>
+				{#if browserLogPaneId}
+					<div class="mt-2 min-h-[220px] min-w-0 rounded border border-border bg-background/50 p-1">
+						<p class="mb-1 text-[9px] text-muted-foreground">Browser log (read-only)</p>
+						{#key browserLogPaneId}
+							<DeptTerminal paneId={browserLogPaneId} readOnly={true} />
+						{/key}
+					</div>
+				{/if}
 			</div>
 
 			<p class="text-muted-foreground leading-relaxed">

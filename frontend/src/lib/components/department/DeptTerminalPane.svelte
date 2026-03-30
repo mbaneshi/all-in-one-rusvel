@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { beforeNavigate } from '$app/navigation';
 	import { untrack } from 'svelte';
+	import { postTerminalDeptTrace } from '$lib/api';
 	import DeptTerminal from '$lib/components/DeptTerminal.svelte';
 	import {
 		terminalDeptPaneUrl,
@@ -21,8 +23,17 @@
 	let terminalLoading = $state(false);
 	let terminalErr = $state('');
 	let addingPane = $state(false);
+	let traceUiToTerminal = $state(false);
 
 	const OPEN_TIMEOUT_MS = 25_000;
+
+	beforeNavigate(({ to }) => {
+		if (!traceUiToTerminal || !sessionId) return;
+		const path = to?.url?.pathname;
+		if (path) {
+			void postTerminalDeptTrace(dept, sessionId, `nav ${path}`);
+		}
+	});
 
 	$effect(() => {
 		const sid = sessionId;
@@ -159,6 +170,16 @@
 						Tile vertical
 					</button>
 				{/if}
+				<label
+					class="flex cursor-pointer items-center gap-1 text-[10px] text-muted-foreground"
+				>
+					<input
+						type="checkbox"
+						bind:checked={traceUiToTerminal}
+						class="rounded border-border"
+					/>
+					Trace UI navigation
+				</label>
 			</div>
 			<div
 				class="grid min-h-0 min-w-0 flex-1 gap-1 {paneIds.length > 1

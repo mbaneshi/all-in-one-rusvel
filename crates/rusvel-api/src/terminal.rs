@@ -1,8 +1,10 @@
 //! WebSocket bridge for the PTY-backed terminal.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::env;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
 
 use axum::Json;
 use axum::extract::ws::{Message, WebSocket};
@@ -13,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
+use rusvel_core::department::DepartmentTerminalPrefs;
 use rusvel_core::id::{PaneId, RunId, SessionId, WindowId};
 use rusvel_core::terminal::{Layout, PaneSize, PaneSource, WindowSource};
 
@@ -93,6 +96,98 @@ fn dept_pane_cache() -> &'static Mutex<HashMap<(SessionId, String), DeptPaneEntr
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+fn terminal_allowed_dept_ids() -> Option<HashSet<String>> {
+    env::var("RUSVEL_TERMINAL_ALLOWED_DEPTS").ok().and_then(|s| {
+        let set: HashSet<String> = s
+            .split(',')
+            .map(|x| x.trim().to_string())
+            .filter(|x| !x.is_empty())
+            .collect();
+        if set.is_empty() {
+            None
+        } else {
+            Some(set)
+        }
+    })
+}
+
+fn dept_allowed_for_terminal(dept_id: &str) -> bool {
+    terminal_allowed_dept_ids()
+        .map(|s| s.contains(dept_id))
+        .unwrap_or(true)
+}
+
+fn max_panes_per_session() -> usize {
+    env::var("RUSVEL_TERMINAL_MAX_PANES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .filter(|&n| n > 0)
+        .unwrap_or(64)
+}
+
+async fn count_session_panes(
+    terminal: &std::sync::Arc<dyn rusvel_core::ports::TerminalPort>,
+    session_id: &SessionId,
+) -> usize {
+    terminal
+        .list_panes_for_session(session_id)
+        .await
+        .map(|v| v.len())
+        .unwrap_or(0)
+}
+
+fn validate_spawn_cmd_allowlist(cmd: &str) -> Result<(), String> {
+    let Ok(raw) = env::var("RUSVEL_TERMINAL_CMD_ALLOWLIST") else {
+        return Ok(());
+    };
+    let prefs: Vec<&str> = raw
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if prefs.is_empty() {
+        return Ok(());
+    }
+    let c = cmd.trim();
+    if prefs.iter().any(|p| c.starts_with(p)) {
+        Ok(())
+    } else {
+        Err("command blocked by RUSVEL_TERMINAL_CMD_ALLOWLIST".into())
+    }
+}
+
+fn dept_terminal_prefs(state: &AppState, dept_id: &str) -> Option<DepartmentTerminalPrefs> {
+    state.registry.get(dept_id).map(|d| d.terminal.clone())
+}
+
+fn merged_terminal_cwd(prefs: Option<&DepartmentTerminalPrefs>) -> PathBuf {
+    if let Ok(p) = env::var("RUSVEL_TERMINAL_DEFAULT_CWD") {
+        let t = p.trim();
+        if !t.is_empty() {
+            return PathBuf::from(t);
+        }
+    }
+    if let Some(pr) = prefs {
+        if let Some(ref cwd) = pr.default_cwd {
+            let t = cwd.trim();
+            if !t.is_empty() {
+                return PathBuf::from(t);
+            }
+        }
+    }
+    env::current_dir().unwrap_or_else(|_| PathBuf::from("/"))
+}
+
+fn prefs_env_map(prefs: Option<&DepartmentTerminalPrefs>) -> Option<HashMap<String, String>> {
+    prefs.and_then(|p| {
+        if p.env.is_empty() {
+            None
+        } else {
+            Some(p.env.clone())
+        }
+    })
+}
+
 async fn session_owns_window(
     terminal: &std::sync::Arc<dyn rusvel_core::ports::TerminalPort>,
     session_id: &SessionId,
@@ -138,6 +233,14 @@ pub async fn terminal_dept_pane(
     };
     let session_id = SessionId::from_uuid(session_uuid);
 
+    if !dept_allowed_for_terminal(&dept_id) {
+        return (
+            axum::http::StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": "department not allowed for terminal (RUSVEL_TERMINAL_ALLOWED_DEPTS)" })),
+        )
+            .into_response();
+    }
+
     let key = (session_id, dept_id.clone());
     {
         let guard = dept_pane_cache().lock().unwrap();
@@ -149,6 +252,22 @@ pub async fn terminal_dept_pane(
             .into_response();
         }
     }
+
+    if count_session_panes(&terminal, &session_id).await >= max_panes_per_session() {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "session pane limit reached (RUSVEL_TERMINAL_MAX_PANES)" })),
+        )
+            .into_response();
+    }
+
+    let prefs = dept_terminal_prefs(&*state, &dept_id);
+    let init_cmds = prefs
+        .as_ref()
+        .map(|p| p.init_commands.clone())
+        .unwrap_or_default();
+    let cwd = merged_terminal_cwd(prefs.as_ref());
+    let env_for_spawn = prefs_env_map(prefs.as_ref());
 
     let window_id = match terminal
         .create_window(
@@ -170,7 +289,6 @@ pub async fn terminal_dept_pane(
     };
 
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
     let size = PaneSize { rows: 24, cols: 80 };
 
     let pane_id = match terminal
@@ -180,7 +298,7 @@ pub async fn terminal_dept_pane(
             &cwd,
             size,
             PaneSource::Department(dept_id.clone()),
-            None,
+            env_for_spawn,
         )
         .await
     {
@@ -194,6 +312,19 @@ pub async fn terminal_dept_pane(
                 .into_response();
         }
     };
+
+    if !init_cmds.is_empty() {
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        for line in init_cmds {
+            let l = line.trim();
+            if l.is_empty() {
+                continue;
+            }
+            let _ = terminal
+                .write_pane(&pane_id, format!("{l}\n").as_bytes())
+                .await;
+        }
+    }
 
     let mut guard = dept_pane_cache().lock().unwrap();
     guard.insert(
@@ -303,6 +434,24 @@ pub async fn terminal_window_add_pane(
         }
     };
 
+    if count_session_panes(&terminal, &session_id).await >= max_panes_per_session() {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "session pane limit reached (RUSVEL_TERMINAL_MAX_PANES)" })),
+        )
+            .into_response();
+    }
+
+    if let Some(ref d) = window.dept_id {
+        if !dept_allowed_for_terminal(d) {
+            return (
+                axum::http::StatusCode::FORBIDDEN,
+                Json(serde_json::json!({ "error": "department not allowed for terminal" })),
+            )
+                .into_response();
+        }
+    }
+
     let pane_source = if let Some(ref d) = window.dept_id {
         PaneSource::Department(d.clone())
     } else {
@@ -324,6 +473,14 @@ pub async fn terminal_window_add_pane(
         rows: body.rows.max(1),
         cols: body.cols.max(1),
     };
+
+    if let Err(msg) = validate_spawn_cmd_allowlist(&shell) {
+        return (
+            axum::http::StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": msg })),
+        )
+            .into_response();
+    }
 
     let pane_id = match terminal
         .create_pane(&window_id, &shell, &cwd, size, pane_source, None)
@@ -526,8 +683,87 @@ pub async fn terminal_resize_pane(
 }
 
 #[derive(Debug, Deserialize)]
+pub struct TerminalDeptTraceBody {
+    pub message: String,
+}
+
+/// POST /api/terminal/dept/:dept_id/trace?session_id=… — inject a UI trace line into the cached dept pane.
+pub async fn terminal_dept_trace(
+    Path(dept_id): Path<String>,
+    Query(q): Query<TerminalDeptQuery>,
+    State(state): State<std::sync::Arc<AppState>>,
+    Json(body): Json<TerminalDeptTraceBody>,
+) -> impl IntoResponse {
+    let terminal = match state.terminal.as_ref() {
+        Some(t) => t.clone(),
+        None => {
+            return (
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({ "error": "Terminal not configured" })),
+            )
+                .into_response();
+        }
+    };
+
+    let session_uuid = match Uuid::parse_str(q.session_id.trim()) {
+        Ok(u) => u,
+        Err(_) => {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": "invalid session_id" })),
+            )
+                .into_response();
+        }
+    };
+    let session_id = SessionId::from_uuid(session_uuid);
+    let key = (session_id, dept_id.clone());
+    let ent = {
+        let guard = dept_pane_cache().lock().unwrap();
+        guard.get(&key).copied()
+    };
+    let Some(ent) = ent else {
+        return (
+            axum::http::StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "no dept terminal pane for this session yet" })),
+        )
+            .into_response();
+    };
+
+    let msg = body.message.trim();
+    if msg.is_empty() {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "message required" })),
+        )
+            .into_response();
+    }
+
+    let line = format!("\r\n\x1b[90m[rusvel:ui]\x1b[0m {msg}\r\n");
+    match terminal.inject_pane_output(&ent.pane_id, line.as_bytes()).await {
+        Ok(()) => axum::http::StatusCode::NO_CONTENT.into_response(),
+        Err(e) => {
+            tracing::debug!("terminal_dept_trace inject: {e}");
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "inject failed" })),
+            )
+                .into_response()
+        }
+    }
+}
+
+fn ws_global_read_only() -> bool {
+    matches!(
+        env::var("RUSVEL_TERMINAL_READ_ONLY").ok().as_deref(),
+        Some("1") | Some("true")
+    )
+}
+
+#[derive(Debug, Deserialize)]
 pub struct TerminalWsQuery {
     pub pane_id: Option<String>,
+    #[serde(default)]
+    pub read_only: bool,
 }
 
 /// GET /api/terminal/ws — upgrade to WebSocket, spawn a PTY pane or attach to `pane_id`, bridge I/O.
@@ -536,14 +772,16 @@ pub async fn terminal_ws(
     Query(q): Query<TerminalWsQuery>,
     State(state): State<std::sync::Arc<AppState>>,
 ) -> impl IntoResponse {
+    let read_only = q.read_only || ws_global_read_only();
     let pane_id = q.pane_id;
-    ws.on_upgrade(move |socket| handle_ws(socket, state, pane_id))
+    ws.on_upgrade(move |socket| handle_ws(socket, state, pane_id, read_only))
 }
 
 async fn handle_ws(
     socket: WebSocket,
     state: std::sync::Arc<AppState>,
     existing_pane: Option<String>,
+    read_only: bool,
 ) {
     let owns_pane = existing_pane.is_none();
     let terminal = match state.terminal.as_ref() {
@@ -642,6 +880,14 @@ async fn handle_ws(
     let terminal_input = terminal.clone();
     let pane_for_input = pane_id;
     let ws_to_pty = tokio::spawn(async move {
+        if read_only {
+            while let Some(Ok(msg)) = ws_rx.next().await {
+                if matches!(msg, Message::Close(_)) {
+                    break;
+                }
+            }
+            return;
+        }
         while let Some(Ok(msg)) = ws_rx.next().await {
             match msg {
                 Message::Text(text) => {

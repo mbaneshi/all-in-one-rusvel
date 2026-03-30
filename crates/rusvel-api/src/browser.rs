@@ -9,13 +9,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::sse::{Event, Sse};
 use chrono::Utc;
 use futures::Stream;
 use rusvel_core::domain::Event as RusvelEvent;
-use rusvel_core::id::EventId;
+use rusvel_core::id::{EventId, SessionId};
 use rusvel_core::ports::BrowserPort;
 use serde::Deserialize;
 use tokio_stream::StreamExt as _;
@@ -106,8 +106,17 @@ pub async fn browser_tabs(
     Ok(Json(serde_json::to_value(tabs).unwrap_or_default()))
 }
 
+#[derive(Debug, Deserialize, Default)]
+pub struct BrowserObserveQuery {
+    #[serde(default)]
+    pub session_id: Option<String>,
+    #[serde(default)]
+    pub platform: Option<String>,
+}
+
 pub async fn browser_observe(
     Path(tab_id): Path<String>,
+    Query(q): Query<BrowserObserveQuery>,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let Some(cdp) = state.cdp.as_ref() else {
@@ -117,7 +126,35 @@ pub async fn browser_observe(
         .observe(&tab_id)
         .await
         .map_err(|_| StatusCode::BAD_REQUEST)?;
-    Ok(Json(serde_json::json!({ "ok": true, "tab_id": tab_id })))
+
+    let mut out = serde_json::json!({ "ok": true, "tab_id": tab_id });
+    if let (Some(raw_sid), Some(term)) = (q.session_id.as_deref(), state.terminal.as_ref()) {
+        let Ok(u) = uuid::Uuid::parse_str(raw_sid.trim()) else {
+            return Ok(Json(out));
+        };
+        let sid = SessionId::from_uuid(u);
+        let browser: Arc<dyn BrowserPort> = cdp.clone();
+        let platform = q
+            .platform
+            .clone()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| "cdp".into());
+        match rusvel_terminal::spawn_browser_log_bridge(
+            browser,
+            term.clone(),
+            sid,
+            tab_id.clone(),
+            platform,
+        )
+        .await
+        {
+            Ok(pid) => {
+                out["terminal_pane_id"] = serde_json::json!(pid.to_string());
+            }
+            Err(e) => tracing::debug!(error = %e, "spawn_browser_log_bridge failed"),
+        }
+    }
+    Ok(Json(out))
 }
 
 pub async fn browser_captures(

@@ -12,9 +12,10 @@ export function terminalPaneResizeUrl(paneId: string): string {
 	return `/api/terminal/pane/${encodeURIComponent(paneId)}/resize`;
 }
 
-export function terminalWebSocketUrl(paneId: string): string {
+export function terminalWebSocketUrl(paneId: string, readOnly = false): string {
 	if (typeof window === 'undefined') return '';
 	const p = new URLSearchParams({ pane_id: paneId });
+	if (readOnly) p.set('read_only', 'true');
 	const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 	return `${proto}//${window.location.host}/api/terminal/ws?${p.toString()}`;
 }

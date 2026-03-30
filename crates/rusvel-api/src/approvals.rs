@@ -7,7 +7,7 @@ use std::sync::Arc;
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use rusvel_core::domain::{Job, JobFilter, JobStatus};
@@ -16,10 +16,39 @@ use rusvel_core::id::JobId;
 
 use crate::AppState;
 
+#[derive(Serialize)]
+pub struct PendingApprovalItem {
+    #[serde(flatten)]
+    pub job: Job,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub terminal_pane_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub terminal_window_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub terminal_dept_id: Option<String>,
+}
+
+fn approval_terminal_fields(
+    meta: &serde_json::Value,
+) -> (Option<String>, Option<String>, Option<String>) {
+    let obj = meta.as_object();
+    let g = |k: &str| {
+        obj
+            .and_then(|m| m.get(k))
+            .and_then(|v| v.as_str())
+            .map(std::string::ToString::to_string)
+    };
+    (
+        g("terminal_pane_id"),
+        g("terminal_window_id"),
+        g("terminal_dept_id"),
+    )
+}
+
 /// `GET /api/approvals` — list jobs awaiting human approval.
 pub async fn list_pending(
     State(state): State<Arc<AppState>>,
-) -> Result<Json<Vec<Job>>, (StatusCode, String)> {
+) -> Result<Json<Vec<PendingApprovalItem>>, (StatusCode, String)> {
     let filter = JobFilter {
         session_id: None,
         kinds: vec![],
@@ -33,7 +62,21 @@ pub async fn list_pending(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    Ok(Json(jobs))
+    let out: Vec<PendingApprovalItem> = jobs
+        .into_iter()
+        .map(|job| {
+            let (terminal_pane_id, terminal_window_id, terminal_dept_id) =
+                approval_terminal_fields(&job.metadata);
+            PendingApprovalItem {
+                job,
+                terminal_pane_id,
+                terminal_window_id,
+                terminal_dept_id,
+            }
+        })
+        .collect();
+
+    Ok(Json(out))
 }
 
 /// `POST /api/approvals/{id}/approve` — approve a pending job.

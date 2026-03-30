@@ -137,6 +137,17 @@
 									Scheduled {scheduled}
 								{/if}
 							</p>
+							{#if job.terminal_dept_id}
+								<a
+									href="/dept/{job.terminal_dept_id}/terminal"
+									class="mt-1 inline-block text-[11px] text-primary underline underline-offset-2"
+								>
+									Open department terminal
+									{#if job.terminal_pane_id}
+										<span class="text-muted-foreground"> (pane linked)</span>
+									{/if}
+								</a>
+							{/if}
 							{#if rows.length > 0}
 								<dl
 									class="mt-3 grid gap-x-4 gap-y-1 text-[11px] sm:grid-cols-[minmax(0,7rem)_1fr]"
