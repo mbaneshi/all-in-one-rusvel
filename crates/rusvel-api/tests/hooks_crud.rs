@@ -43,16 +43,14 @@ async fn create_get_delete_hook_roundtrip() {
     let got: serde_json::Value = serde_json::from_slice(&b2).unwrap();
     assert_eq!(got["name"], "notify-on-done");
 
-    let (st3, _) =
-        json_request(&mut h.router, "DELETE", &format!("/api/hooks/{id}"), None).await;
+    let (st3, _) = json_request(&mut h.router, "DELETE", &format!("/api/hooks/{id}"), None).await;
     assert_eq!(st3, StatusCode::NO_CONTENT);
 }
 
 #[tokio::test]
 async fn list_hook_events() {
     let mut h = build_harness().await;
-    let (status, body) =
-        json_request(&mut h.router, "GET", "/api/hooks/events", None).await;
+    let (status, body) = json_request(&mut h.router, "GET", "/api/hooks/events", None).await;
     assert_eq!(status, StatusCode::OK);
     let events: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
     assert!(!events.is_empty());

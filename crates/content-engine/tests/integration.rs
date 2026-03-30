@@ -53,56 +53,117 @@ impl ObjectStore for MemObjects {
 struct NullEvents;
 #[async_trait]
 impl EventStore for NullEvents {
-    async fn append(&self, _: &Event) -> Result<()> { Ok(()) }
-    async fn get(&self, _: &EventId) -> Result<Option<Event>> { Ok(None) }
-    async fn query(&self, _: EventFilter) -> Result<Vec<Event>> { Ok(vec![]) }
+    async fn append(&self, _: &Event) -> Result<()> {
+        Ok(())
+    }
+    async fn get(&self, _: &EventId) -> Result<Option<Event>> {
+        Ok(None)
+    }
+    async fn query(&self, _: EventFilter) -> Result<Vec<Event>> {
+        Ok(vec![])
+    }
 }
 struct NullSessions;
 #[async_trait]
 impl SessionStore for NullSessions {
-    async fn put_session(&self, _: &Session) -> Result<()> { Ok(()) }
-    async fn get_session(&self, _: &SessionId) -> Result<Option<Session>> { Ok(None) }
-    async fn list_sessions(&self) -> Result<Vec<SessionSummary>> { Ok(vec![]) }
-    async fn put_run(&self, _: &Run) -> Result<()> { Ok(()) }
-    async fn get_run(&self, _: &RunId) -> Result<Option<Run>> { Ok(None) }
-    async fn list_runs(&self, _: &SessionId) -> Result<Vec<Run>> { Ok(vec![]) }
-    async fn put_thread(&self, _: &Thread) -> Result<()> { Ok(()) }
-    async fn get_thread(&self, _: &ThreadId) -> Result<Option<Thread>> { Ok(None) }
-    async fn list_threads(&self, _: &RunId) -> Result<Vec<Thread>> { Ok(vec![]) }
+    async fn put_session(&self, _: &Session) -> Result<()> {
+        Ok(())
+    }
+    async fn get_session(&self, _: &SessionId) -> Result<Option<Session>> {
+        Ok(None)
+    }
+    async fn list_sessions(&self) -> Result<Vec<SessionSummary>> {
+        Ok(vec![])
+    }
+    async fn put_run(&self, _: &Run) -> Result<()> {
+        Ok(())
+    }
+    async fn get_run(&self, _: &RunId) -> Result<Option<Run>> {
+        Ok(None)
+    }
+    async fn list_runs(&self, _: &SessionId) -> Result<Vec<Run>> {
+        Ok(vec![])
+    }
+    async fn put_thread(&self, _: &Thread) -> Result<()> {
+        Ok(())
+    }
+    async fn get_thread(&self, _: &ThreadId) -> Result<Option<Thread>> {
+        Ok(None)
+    }
+    async fn list_threads(&self, _: &RunId) -> Result<Vec<Thread>> {
+        Ok(vec![])
+    }
 }
 struct NullJobs;
 #[async_trait]
 impl JobStore for NullJobs {
-    async fn enqueue(&self, _: &Job) -> Result<()> { Ok(()) }
-    async fn dequeue(&self, _: &[JobKind]) -> Result<Option<Job>> { Ok(None) }
-    async fn update(&self, _: &Job) -> Result<()> { Ok(()) }
-    async fn get(&self, _: &JobId) -> Result<Option<Job>> { Ok(None) }
-    async fn list(&self, _: JobFilter) -> Result<Vec<Job>> { Ok(vec![]) }
+    async fn enqueue(&self, _: &Job) -> Result<()> {
+        Ok(())
+    }
+    async fn dequeue(&self, _: &[JobKind]) -> Result<Option<Job>> {
+        Ok(None)
+    }
+    async fn update(&self, _: &Job) -> Result<()> {
+        Ok(())
+    }
+    async fn get(&self, _: &JobId) -> Result<Option<Job>> {
+        Ok(None)
+    }
+    async fn list(&self, _: JobFilter) -> Result<Vec<Job>> {
+        Ok(vec![])
+    }
 }
 struct NullMetrics;
 #[async_trait]
 impl MetricStore for NullMetrics {
-    async fn record(&self, _: &MetricPoint) -> Result<()> { Ok(()) }
-    async fn query(&self, _: MetricFilter) -> Result<Vec<MetricPoint>> { Ok(vec![]) }
+    async fn record(&self, _: &MetricPoint) -> Result<()> {
+        Ok(())
+    }
+    async fn query(&self, _: MetricFilter) -> Result<Vec<MetricPoint>> {
+        Ok(vec![])
+    }
 }
 
-struct TestStorage { objects: MemObjects }
+struct TestStorage {
+    objects: MemObjects,
+}
 impl TestStorage {
-    fn new() -> Self { Self { objects: MemObjects::new() } }
+    fn new() -> Self {
+        Self {
+            objects: MemObjects::new(),
+        }
+    }
 }
 impl StoragePort for TestStorage {
-    fn events(&self) -> &dyn EventStore { &NullEvents }
-    fn objects(&self) -> &dyn ObjectStore { &self.objects }
-    fn sessions(&self) -> &dyn SessionStore { &NullSessions }
-    fn jobs(&self) -> &dyn JobStore { &NullJobs }
-    fn metrics(&self) -> &dyn MetricStore { &NullMetrics }
+    fn events(&self) -> &dyn EventStore {
+        &NullEvents
+    }
+    fn objects(&self) -> &dyn ObjectStore {
+        &self.objects
+    }
+    fn sessions(&self) -> &dyn SessionStore {
+        &NullSessions
+    }
+    fn jobs(&self) -> &dyn JobStore {
+        &NullJobs
+    }
+    fn metrics(&self) -> &dyn MetricStore {
+        &NullMetrics
+    }
 }
 
 struct RecordingEventBus(Mutex<Vec<Event>>);
 impl RecordingEventBus {
-    fn new() -> Self { Self(Mutex::new(Vec::new())) }
+    fn new() -> Self {
+        Self(Mutex::new(Vec::new()))
+    }
     fn kinds(&self) -> Vec<String> {
-        self.0.lock().unwrap().iter().map(|e| e.kind.clone()).collect()
+        self.0
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|e| e.kind.clone())
+            .collect()
     }
 }
 #[async_trait]
@@ -112,19 +173,29 @@ impl EventPort for RecordingEventBus {
         self.0.lock().unwrap().push(event);
         Ok(id)
     }
-    async fn get(&self, _: &EventId) -> Result<Option<Event>> { Ok(None) }
-    async fn query(&self, _: EventFilter) -> Result<Vec<Event>> { Ok(vec![]) }
+    async fn get(&self, _: &EventId) -> Result<Option<Event>> {
+        Ok(None)
+    }
+    async fn query(&self, _: EventFilter) -> Result<Vec<Event>> {
+        Ok(vec![])
+    }
 }
 
 struct FakeAgent;
 #[async_trait]
 impl AgentPort for FakeAgent {
-    async fn create(&self, _: AgentConfig) -> Result<RunId> { Ok(RunId::new()) }
+    async fn create(&self, _: AgentConfig) -> Result<RunId> {
+        Ok(RunId::new())
+    }
     async fn run(&self, _: &RunId, input: Content) -> Result<AgentOutput> {
-        let prompt = input.parts.iter().find_map(|p| match p {
-            Part::Text(t) => Some(t.clone()),
-            _ => None,
-        }).unwrap_or_default();
+        let prompt = input
+            .parts
+            .iter()
+            .find_map(|p| match p {
+                Part::Text(t) => Some(t.clone()),
+                _ => None,
+            })
+            .unwrap_or_default();
         Ok(AgentOutput {
             run_id: RunId::new(),
             content: Content::text(format!("# Title\n\nAbout: {prompt}")),
@@ -134,22 +205,44 @@ impl AgentPort for FakeAgent {
             metadata: serde_json::json!({}),
         })
     }
-    async fn stop(&self, _: &RunId) -> Result<()> { Ok(()) }
-    async fn status(&self, _: &RunId) -> Result<AgentStatus> { Ok(AgentStatus::Completed) }
+    async fn stop(&self, _: &RunId) -> Result<()> {
+        Ok(())
+    }
+    async fn status(&self, _: &RunId) -> Result<AgentStatus> {
+        Ok(AgentStatus::Completed)
+    }
 }
 
 struct FakeJobPort;
 #[async_trait]
 impl JobPort for FakeJobPort {
-    async fn enqueue(&self, _: NewJob) -> Result<JobId> { Ok(JobId::new()) }
-    async fn dequeue(&self, _: &[JobKind]) -> Result<Option<Job>> { Ok(None) }
-    async fn complete(&self, _: &JobId, _: JobResult) -> Result<()> { Ok(()) }
-    async fn hold_for_approval(&self, _: &JobId, _: JobResult) -> Result<()> { Ok(()) }
-    async fn fail(&self, _: &JobId, _: String) -> Result<()> { Ok(()) }
-    async fn schedule(&self, _: NewJob, _: &str) -> Result<JobId> { Ok(JobId::new()) }
-    async fn cancel(&self, _: &JobId) -> Result<()> { Ok(()) }
-    async fn approve(&self, _: &JobId) -> Result<()> { Ok(()) }
-    async fn list(&self, _: JobFilter) -> Result<Vec<Job>> { Ok(vec![]) }
+    async fn enqueue(&self, _: NewJob) -> Result<JobId> {
+        Ok(JobId::new())
+    }
+    async fn dequeue(&self, _: &[JobKind]) -> Result<Option<Job>> {
+        Ok(None)
+    }
+    async fn complete(&self, _: &JobId, _: JobResult) -> Result<()> {
+        Ok(())
+    }
+    async fn hold_for_approval(&self, _: &JobId, _: JobResult) -> Result<()> {
+        Ok(())
+    }
+    async fn fail(&self, _: &JobId, _: String) -> Result<()> {
+        Ok(())
+    }
+    async fn schedule(&self, _: NewJob, _: &str) -> Result<JobId> {
+        Ok(JobId::new())
+    }
+    async fn cancel(&self, _: &JobId) -> Result<()> {
+        Ok(())
+    }
+    async fn approve(&self, _: &JobId) -> Result<()> {
+        Ok(())
+    }
+    async fn list(&self, _: JobFilter) -> Result<Vec<Job>> {
+        Ok(vec![])
+    }
 }
 
 fn make_engine() -> (ContentEngine, Arc<RecordingEventBus>, Arc<TestStorage>) {
@@ -171,7 +264,10 @@ async fn draft_and_list_content_roundtrip() {
     let (engine, events, _) = make_engine();
     let sid = SessionId::new();
 
-    let item = engine.draft(&sid, "Rust async", ContentKind::Blog).await.unwrap();
+    let item = engine
+        .draft(&sid, "Rust async", ContentKind::Blog)
+        .await
+        .unwrap();
     assert_eq!(item.status, ContentStatus::Draft);
     assert_eq!(item.kind, ContentKind::Blog);
     assert!(!item.body_markdown.is_empty());
@@ -187,8 +283,14 @@ async fn adapt_creates_platform_variant() {
     let (engine, events, _) = make_engine();
     let sid = SessionId::new();
 
-    let original = engine.draft(&sid, "Testing", ContentKind::LongForm).await.unwrap();
-    let adapted = engine.adapt(&sid, original.id, Platform::Twitter).await.unwrap();
+    let original = engine
+        .draft(&sid, "Testing", ContentKind::LongForm)
+        .await
+        .unwrap();
+    let adapted = engine
+        .adapt(&sid, original.id, Platform::Twitter)
+        .await
+        .unwrap();
 
     assert_ne!(adapted.id, original.id);
     assert_eq!(adapted.status, ContentStatus::Adapted);
@@ -203,7 +305,10 @@ async fn publish_requires_approval() {
     engine.register_platform(mock);
 
     let sid = SessionId::new();
-    let item = engine.draft(&sid, "Blocked", ContentKind::Blog).await.unwrap();
+    let item = engine
+        .draft(&sid, "Blocked", ContentKind::Blog)
+        .await
+        .unwrap();
 
     let err = engine.publish(&sid, item.id, Platform::DevTo).await;
     assert!(err.is_err());
@@ -217,15 +322,25 @@ async fn approve_then_publish_succeeds() {
     engine.register_platform(mock.clone());
 
     let sid = SessionId::new();
-    let mut item = engine.draft(&sid, "Approved", ContentKind::Blog).await.unwrap();
+    let mut item = engine
+        .draft(&sid, "Approved", ContentKind::Blog)
+        .await
+        .unwrap();
     item.approval = ApprovalStatus::Approved;
-    storage.objects().put(
-        "content",
-        &item.id.to_string(),
-        serde_json::to_value(&item).unwrap(),
-    ).await.unwrap();
+    storage
+        .objects()
+        .put(
+            "content",
+            &item.id.to_string(),
+            serde_json::to_value(&item).unwrap(),
+        )
+        .await
+        .unwrap();
 
-    let result = engine.publish(&sid, item.id, Platform::DevTo).await.unwrap();
+    let result = engine
+        .publish(&sid, item.id, Platform::DevTo)
+        .await
+        .unwrap();
     assert!(!result.post_id.is_empty());
     assert!(events.kinds().contains(&"content.published".to_string()));
     assert_eq!(mock.published_items().len(), 1);

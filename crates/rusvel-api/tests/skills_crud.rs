@@ -43,15 +43,13 @@ async fn create_get_delete_skill_roundtrip() {
     assert_eq!(got["name"], "summarize");
 
     // List with filter
-    let (st3, b3) =
-        json_request(&mut h.router, "GET", "/api/skills?engine=forge", None).await;
+    let (st3, b3) = json_request(&mut h.router, "GET", "/api/skills?engine=forge", None).await;
     assert_eq!(st3, StatusCode::OK);
     let list: Vec<serde_json::Value> = serde_json::from_slice(&b3).unwrap();
     assert!(list.iter().any(|s| s["name"] == "summarize"));
 
     // Delete
-    let (st4, _) =
-        json_request(&mut h.router, "DELETE", &format!("/api/skills/{id}"), None).await;
+    let (st4, _) = json_request(&mut h.router, "DELETE", &format!("/api/skills/{id}"), None).await;
     assert_eq!(st4, StatusCode::NO_CONTENT);
 
     // Verify deleted

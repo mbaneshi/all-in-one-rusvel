@@ -4,6 +4,7 @@ const API_PORT = 3000;
 const DEV_PORT = 5173;
 
 export default defineConfig({
+	globalSetup: './tests/global-setup.ts',
 	testDir: './tests',
 	outputDir: './test-results',
 	snapshotDir: './tests/visual-baselines',

@@ -6,8 +6,10 @@
 import { test as base, type Page } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'node:url';
 import type { TestState } from './global-setup';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const STATE_FILE = path.join(__dirname, '..', 'test-results', '.test-state.json');
 
 function loadTestState(): TestState {

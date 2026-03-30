@@ -1,7 +1,7 @@
 //! Declarative manifest — everything the host needs to know about a department
 //! without executing any of its code.
 //!
-//! Analogous to VSCode's `package.json#contributes` or Django's `AppConfig`.
+//! Analogous to `VSCode`'s `package.json#contributes` or Django's `AppConfig`.
 
 use serde::{Deserialize, Serialize};
 
@@ -36,7 +36,7 @@ pub struct DepartmentManifest {
     /// System prompt for this department's chat.
     pub system_prompt: String,
 
-    /// Capability tags (e.g. "content_creation", "code_analysis").
+    /// Capability tags (e.g. `content_creation`, `code_analysis`).
     pub capabilities: Vec<String>,
 
     /// Quick-action buttons shown in the department panel.
@@ -245,7 +245,7 @@ fn default_card_size() -> String {
 /// Which port a department requires.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PortRequirement {
-    /// Port name (e.g. "AgentPort", "EventPort").
+    /// Port name (e.g. `AgentPort`, `EventPort`).
     pub port: String,
     /// Whether the department can function without it.
     #[serde(default)]

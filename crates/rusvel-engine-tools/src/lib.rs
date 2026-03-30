@@ -32,9 +32,6 @@ pub async fn register_code_tools(registry: &ToolRegistry, engine: Arc<code_engin
     code::register(registry, engine).await;
 }
 
-pub async fn register_flow_tools(
-    registry: &ToolRegistry,
-    engine: Arc<flow_engine::FlowEngine>,
-) {
+pub async fn register_flow_tools(registry: &ToolRegistry, engine: Arc<flow_engine::FlowEngine>) {
     flow::register(registry, engine).await;
 }

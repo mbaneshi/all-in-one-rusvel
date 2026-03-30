@@ -347,7 +347,9 @@ fn build_capabilities_overview(state: &AppState) -> String {
     out.push_str("- Terminal: browser-based PTY terminal\n");
     out.push_str("- Database browser: schema introspection, SQL runner\n");
     out.push_str("- MCP: connect to external MCP servers for tool discovery\n");
-    out.push_str("- Approval queue: human-in-the-loop approval for content publishing and outreach\n");
+    out.push_str(
+        "- Approval queue: human-in-the-loop approval for content publishing and outreach\n",
+    );
 
     // Tools summary
     let tool_count = state.tools.list().len();

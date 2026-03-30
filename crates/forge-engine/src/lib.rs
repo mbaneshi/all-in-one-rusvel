@@ -20,12 +20,12 @@ use rusvel_core::id::*;
 use rusvel_core::ports::*;
 use std::sync::Arc;
 
+pub use artifacts::{ARTIFACT_KIND, ArtifactRecord, list_artifacts, save_artifact};
 pub use mission::{
     DailyPlan, Review, forge_route_contributions_for_manifest,
     mission_tool_contributions_for_manifest,
 };
 pub use personas::{PersonaManager, persona_contributions_for_manifest};
-pub use artifacts::{ArtifactRecord, ARTIFACT_KIND, list_artifacts, save_artifact};
 pub use pipeline::{
     FLOW_EXECUTIONS_OBJECT_KIND, PipelineOrchestrationDef, PipelineStepKind, PipelineStepRunner,
 };
@@ -99,7 +99,7 @@ impl ForgeEngine {
             budget_limit: profile.budget_limit,
             max_iterations: None,
             permission_mode: Default::default(),
-        metadata: serde_json::json!({}),
+            metadata: serde_json::json!({}),
         })
     }
 }
@@ -138,7 +138,7 @@ impl Engine for ForgeEngine {
         Ok(HealthStatus {
             healthy: true,
             message: Some("Forge Engine is operational".into()),
-        metadata: serde_json::json!({}),
+            metadata: serde_json::json!({}),
         })
     }
 }
@@ -175,7 +175,7 @@ mod tests {
                 tool_calls: 0,
                 usage: LlmUsage::default(),
                 cost_estimate: 0.01,
-        metadata: serde_json::json!({}),
+                metadata: serde_json::json!({}),
             })
         }
         async fn stop(&self, _: &RunId) -> Result<()> {

@@ -5,9 +5,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use chrono::Utc;
 use rusvel_core::domain::BrowserEvent;
-use rusvel_core::engine::Engine;
 use rusvel_core::domain::VectorSearchResult;
-use rusvel_core::ports::{AgentPort, BrowserPort, EmbeddingPort, EventPort, StoragePort, VectorStorePort};
+use rusvel_core::engine::Engine;
+use rusvel_core::ports::{
+    AgentPort, BrowserPort, EmbeddingPort, EventPort, StoragePort, VectorStorePort,
+};
 use rusvel_core::{
     Capability, Contact, ContactId, Event, EventId, HealthStatus, ObjectFilter, Opportunity,
     OpportunityId, OpportunitySource, OpportunityStage, Result, RusvelError, SessionId,
@@ -24,8 +26,8 @@ pub mod scorer;
 pub mod source;
 
 pub use cdp_source::{CdpSource, DEFAULT_CDP_EXTRACT_JS, extract_js_listing_cards};
-pub use scan_execute::{scan_from_params, HarvestScanParams};
 pub use outcomes::{HarvestDealOutcome, HarvestOutcomeRecord};
+pub use scan_execute::{HarvestScanParams, scan_from_params};
 pub use scorer::ScoringMethod;
 
 use pipeline::{Pipeline, PipelineStats};
@@ -179,7 +181,9 @@ impl HarvestEngine {
 
         let list = pipe.list(session_id, None).await?;
         for mut ex in list {
-            let same_key = key.as_ref().is_some_and(|k| ex.platform_job_key.as_ref() == Some(k));
+            let same_key = key
+                .as_ref()
+                .is_some_and(|k| ex.platform_job_key.as_ref() == Some(k));
             let same_url = url.as_ref().is_some_and(|u| ex.url.as_ref() == Some(u));
             if !same_key && !same_url {
                 continue;
@@ -320,7 +324,10 @@ impl HarvestEngine {
             normalize::prepare_raw(&mut raw, source_kind.clone());
 
             let hints = self.scoring_outcome_hints_for_raw(session_id, &raw).await;
-            let scored = self.scorer_for_session(session_id, hints).score(&raw).await?;
+            let scored = self
+                .scorer_for_session(session_id, hints)
+                .score(&raw)
+                .await?;
 
             let opportunity = Opportunity {
                 id: OpportunityId::new(),
@@ -424,7 +431,10 @@ impl HarvestEngine {
         };
 
         let hints = self.scoring_outcome_hints_for_raw(session_id, &raw).await;
-        let scored = self.scorer_for_session(session_id, hints).score(&raw).await?;
+        let scored = self
+            .scorer_for_session(session_id, hints)
+            .score(&raw)
+            .await?;
         opp.score = scored.score;
         {
             let mut meta = opp.metadata;
@@ -634,10 +644,12 @@ impl HarvestEngine {
             "job_listing" => {
                 if let Some(jobs) = data.get("jobs").and_then(|v| v.as_array()) {
                     for j in jobs {
-                        self.ingest_json_row(session_id, j, source.clone(), "cdp").await?;
+                        self.ingest_json_row(session_id, j, source.clone(), "cdp")
+                            .await?;
                     }
                 } else {
-                    self.ingest_json_row(session_id, &data, source, "cdp").await?;
+                    self.ingest_json_row(session_id, &data, source, "cdp")
+                        .await?;
                 }
             }
             "client_profile" if platform.as_str() == "upwork" => {

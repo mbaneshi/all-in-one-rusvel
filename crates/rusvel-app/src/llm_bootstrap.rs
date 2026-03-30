@@ -20,13 +20,7 @@ pub fn compose_llm_multi() -> MultiProvider {
 
     if let Ok(raw) = std::env::var("ANTHROPIC_API_KEY") {
         let key = raw.trim().to_string();
-        if !key.is_empty() {
-            tracing::info!(
-                target: "rusvel::llm",
-                "registering ClaudeProvider (ANTHROPIC_API_KEY set) for ModelProvider::Claude"
-            );
-            llm_multi.register(ModelProvider::Claude, Arc::new(ClaudeProvider::new(key)));
-        } else {
+        if key.is_empty() {
             tracing::info!(
                 target: "rusvel::llm",
                 "registering ClaudeCliProvider for ModelProvider::Claude (empty ANTHROPIC_API_KEY)"
@@ -35,6 +29,12 @@ pub fn compose_llm_multi() -> MultiProvider {
                 ModelProvider::Claude,
                 Arc::new(ClaudeCliProvider::max_subscription()),
             );
+        } else {
+            tracing::info!(
+                target: "rusvel::llm",
+                "registering ClaudeProvider (ANTHROPIC_API_KEY set) for ModelProvider::Claude"
+            );
+            llm_multi.register(ModelProvider::Claude, Arc::new(ClaudeProvider::new(key)));
         }
     } else {
         tracing::info!(
@@ -55,8 +55,8 @@ pub fn compose_llm_multi() -> MultiProvider {
         }
     }
 
-    let ollama_url = std::env::var("OLLAMA_HOST")
-        .unwrap_or_else(|_| "http://localhost:11434".into());
+    let ollama_url =
+        std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".into());
     llm_multi.register(
         ModelProvider::Ollama,
         Arc::new(OllamaProvider::with_base_url(ollama_url)),

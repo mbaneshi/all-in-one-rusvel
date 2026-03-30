@@ -116,7 +116,8 @@ pub async fn register(registry: &ToolRegistry) {
                     TIPS:\n\
                     - Creates parent directories automatically\n\
                     - Overwrites entire file — use edit_file for targeted changes\n\
-                    - Path must be within the project directory".into(),
+                    - Path must be within the project directory"
+                    .into(),
                 parameters: json!({
                     "type": "object",
                     "properties": {
@@ -143,13 +144,17 @@ pub async fn register(registry: &ToolRegistry) {
                         tokio::fs::create_dir_all(parent).await.ok();
                     }
 
-                    tokio::fs::write(&path, content)
-                        .await
-                        .map_err(|e| rusvel_core::error::RusvelError::Tool(format!("write_file: {e}")))?;
+                    tokio::fs::write(&path, content).await.map_err(|e| {
+                        rusvel_core::error::RusvelError::Tool(format!("write_file: {e}"))
+                    })?;
 
                     Ok(ToolResult {
                         success: true,
-                        output: Content::text(format!("Wrote {} bytes to {}", content.len(), path.display())),
+                        output: Content::text(format!(
+                            "Wrote {} bytes to {}",
+                            content.len(),
+                            path.display()
+                        )),
                         metadata: json!({}),
                     })
                 })

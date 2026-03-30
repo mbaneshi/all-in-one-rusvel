@@ -65,10 +65,6 @@ pub async fn github_set_pat(
 pub async fn github_clear_pat(
     State(state): State<Arc<AppState>>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    let _ = state
-        .storage
-        .objects()
-        .delete(GH_STORE, GH_ID)
-        .await;
+    let _ = state.storage.objects().delete(GH_STORE, GH_ID).await;
     Ok(StatusCode::NO_CONTENT)
 }

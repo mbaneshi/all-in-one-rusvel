@@ -80,7 +80,7 @@ impl LanceVectorStore {
                 "embedding",
                 DataType::FixedSizeList(
                     Arc::new(Field::new("item", DataType::Float32, true)),
-                    self.dimensions as i32,
+                    i32::try_from(self.dimensions).expect("embedding dimensions fit i32"),
                 ),
                 false,
             ),
@@ -105,7 +105,7 @@ impl LanceVectorStore {
         let field = Arc::new(Field::new("item", DataType::Float32, true));
         let list = arrow_array::FixedSizeListArray::try_new(
             field,
-            self.dimensions as i32,
+            i32::try_from(self.dimensions).expect("embedding dimensions fit i32"),
             Arc::new(values),
             None,
         )

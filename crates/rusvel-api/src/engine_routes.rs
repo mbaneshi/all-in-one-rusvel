@@ -29,7 +29,7 @@ use gtm_engine::crm::CrmManager;
 use gtm_engine::{InvoiceId, InvoiceManager, InvoiceStatus, LineItem};
 
 use forge_engine::PipelineOrchestrationDef;
-use harvest_engine::{scan_from_params, HarvestScanParams};
+use harvest_engine::{HarvestScanParams, scan_from_params};
 
 use crate::AppState;
 
@@ -550,10 +550,7 @@ pub async fn harvest_advance(
         .advance_opportunity(&body.opportunity_id, stage.clone())
         .await
         .map_err(engine_err)?;
-    if matches!(
-        stage,
-        OpportunityStage::Won | OpportunityStage::Lost
-    ) {
+    if matches!(stage, OpportunityStage::Won | OpportunityStage::Lost) {
         let result = match stage {
             OpportunityStage::Won => harvest_engine::HarvestDealOutcome::Won,
             OpportunityStage::Lost => harvest_engine::HarvestDealOutcome::Lost,
@@ -914,8 +911,7 @@ pub async fn gtm_deal_advance(
 
     if matches!(outcome_stage, DealStage::Won | DealStage::Lost) {
         let oid = body.opportunity_id.clone().or_else(|| {
-            deal
-                .metadata
+            deal.metadata
                 .get("harvest_opportunity_id")
                 .and_then(|v| v.as_str())
                 .map(String::from)
@@ -927,12 +923,7 @@ pub async fn gtm_deal_advance(
                 _ => unreachable!(),
             };
             let _ = he
-                .record_opportunity_outcome(
-                    &sid,
-                    &opp,
-                    result,
-                    format!("gtm deal {}", deal_id),
-                )
+                .record_opportunity_outcome(&sid, &opp, result, format!("gtm deal {}", deal_id))
                 .await;
         }
     }

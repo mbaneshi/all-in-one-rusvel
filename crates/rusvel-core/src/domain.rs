@@ -349,8 +349,8 @@ pub enum BatchStatus {
 
 /// Heuristic USD estimate from usage (approximate public list prices; Ollama/local = 0).
 pub fn estimate_llm_cost_usd(provider: &ModelProvider, model: &str, usage: &LlmUsage) -> f64 {
-    let in_m = usage.input_tokens as f64 / 1_000_000.0;
-    let out_m = usage.output_tokens as f64 / 1_000_000.0;
+    let in_m = f64::from(usage.input_tokens) / 1_000_000.0;
+    let out_m = f64::from(usage.output_tokens) / 1_000_000.0;
     match provider {
         ModelProvider::Claude => estimate_claude_usd(model, in_m, out_m),
         ModelProvider::OpenAI => estimate_openai_usd(model, in_m, out_m),
@@ -364,8 +364,6 @@ fn estimate_claude_usd(model: &str, in_m: f64, out_m: f64) -> f64 {
         (1.0, 5.0)
     } else if m.contains("opus") {
         (15.0, 75.0)
-    } else if m.contains("sonnet") {
-        (3.0, 15.0)
     } else {
         (3.0, 15.0)
     };
@@ -1345,7 +1343,7 @@ pub enum HybridHitSource {
 //  Browser / CDP (BrowserPort — passive observation foundation)
 // ════════════════════════════════════════════════════════════════════
 
-/// Open browser tab as seen via Chrome DevTools Protocol (`/json/list`).
+/// Open browser tab as seen via Chrome `DevTools` Protocol (`/json/list`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TabInfo {
     pub id: String,
@@ -1392,11 +1390,10 @@ impl BrowserEvent {
                     .get("title")
                     .or_else(|| data.get("name"))
                     .and_then(|v| v.as_str())
-                    .map(|s| format!("{s:?}"))
-                    .unwrap_or_else(|| "\"—\"".to_string());
+                    .map_or_else(|| "\"—\"".to_string(), |s| format!("{s:?}"));
                 let score_part = data
                     .get("score")
-                    .and_then(|v| v.as_f64())
+                    .and_then(serde_json::Value::as_f64)
                     .map(|s| format!(" | score: {s:.1}"))
                     .unwrap_or_default();
                 let time = Utc::now().format("%H:%M:%S");

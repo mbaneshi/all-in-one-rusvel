@@ -1,6 +1,6 @@
 use clap::Parser;
-use rusvel_cli::{Cli, Commands};
 use rusvel_cli::departments::DeptAction;
+use rusvel_cli::{Cli, Commands};
 
 #[test]
 fn parse_forge_status() {
@@ -34,8 +34,7 @@ fn parse_department_list() {
 
 #[test]
 fn parse_department_list_with_kind() {
-    let cli =
-        Cli::try_parse_from(["rusvel", "finance", "list", "--kind", "transactions"]).unwrap();
+    let cli = Cli::try_parse_from(["rusvel", "finance", "list", "--kind", "transactions"]).unwrap();
     match cli.command {
         Some(Commands::Finance {
             action: DeptAction::List { kind, limit },

@@ -29,7 +29,9 @@ impl ParallelEvaluateNode {
         let prompt = branch
             .get("prompt")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| RusvelError::Validation("parallel_evaluate branch needs prompt".into()))?;
+            .ok_or_else(|| {
+                RusvelError::Validation("parallel_evaluate branch needs prompt".into())
+            })?;
         let mut params = serde_json::json!({ "prompt": prompt });
         if let Some(m) = base.node.parameters.get("model") {
             params

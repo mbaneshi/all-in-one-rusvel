@@ -185,7 +185,7 @@ pub async fn register(registry: &ToolRegistry, terminal: Option<Arc<dyn Terminal
                             }
                             match tokio::time::timeout(remaining, rx.recv()).await {
                                 Ok(Ok(data)) => buf.extend_from_slice(&data),
-                                Ok(Err(RecvError::Lagged(_))) => continue,
+                                Ok(Err(RecvError::Lagged(_))) => {}
                                 Ok(Err(RecvError::Closed)) => break,
                                 Err(_) => break,
                             }

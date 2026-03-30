@@ -25,9 +25,9 @@ fn computer_use_beta_header(tools: &[serde_json::Value]) -> Option<&'static str>
     if has_v2 {
         return Some(ANTHROPIC_BETA_COMPUTER_USE_V2);
     }
-    let has_legacy = tools.iter().any(|t| {
-        t.get("type").and_then(|v| v.as_str()) == Some("computer_20250124")
-    });
+    let has_legacy = tools
+        .iter()
+        .any(|t| t.get("type").and_then(|v| v.as_str()) == Some("computer_20250124"));
     if has_legacy {
         return Some(ANTHROPIC_BETA_COMPUTER_USE_LEGACY);
     }
@@ -142,10 +142,7 @@ impl LlmPort for ClaudeProvider {
             let http_resp = match req.json(&body).send().await {
                 Ok(r) => r,
                 Err(e) => {
-                    let _ = tx
-                        .send(LlmStreamEvent::Error(e.to_string()))
-                        .await
-                        .is_ok();
+                    let _ = tx.send(LlmStreamEvent::Error(e.to_string())).await.is_ok();
                     return;
                 }
             };
@@ -192,28 +189,24 @@ impl LlmPort for ClaudeProvider {
                         let typ = ev.get("type").and_then(|t| t.as_str());
                         if typ == Some("content_block_delta") {
                             if let Some(delta) = ev.get("delta") {
-                                if delta.get("type").and_then(|t| t.as_str()) == Some("text_delta") {
-                                    if let Some(text) =
-                                        delta.get("text").and_then(|t| t.as_str())
-                                    {
+                                if delta.get("type").and_then(|t| t.as_str()) == Some("text_delta")
+                                {
+                                    if let Some(text) = delta.get("text").and_then(|t| t.as_str()) {
                                         full_text.push_str(text);
-                                        let _ = tx.send(LlmStreamEvent::Delta(text.to_string())).await;
+                                        let _ =
+                                            tx.send(LlmStreamEvent::Delta(text.to_string())).await;
                                     }
                                 }
                             }
                         } else if typ == Some("message_delta") {
                             if let Some(u) = ev.get("usage") {
-                                if let Some(ot) =
-                                    u.get("output_tokens").and_then(|v| v.as_u64())
-                                {
+                                if let Some(ot) = u.get("output_tokens").and_then(|v| v.as_u64()) {
                                     output_tokens = ot as u32;
                                 }
                             }
                         } else if typ == Some("message_start") {
                             if let Some(u) = ev.get("message").and_then(|m| m.get("usage")) {
-                                if let Some(it) =
-                                    u.get("input_tokens").and_then(|v| v.as_u64())
-                                {
+                                if let Some(it) = u.get("input_tokens").and_then(|v| v.as_u64()) {
                                     input_tokens = it as u32;
                                 }
                             }
@@ -981,12 +974,15 @@ mod tests {
     #[test]
     fn to_claude_request_computer_tool_triggers_beta_scan() {
         assert!(computer_use_beta_header(&[]).is_none());
-        assert!(computer_use_beta_header(&[serde_json::json!({
-            "type": "computer_20250124",
-            "name": "computer",
-            "display_width_px": 1024,
-            "display_height_px": 768
-        })]).is_some());
+        assert!(
+            computer_use_beta_header(&[serde_json::json!({
+                "type": "computer_20250124",
+                "name": "computer",
+                "display_width_px": 1024,
+                "display_height_px": 768
+            })])
+            .is_some()
+        );
     }
 
     #[test]

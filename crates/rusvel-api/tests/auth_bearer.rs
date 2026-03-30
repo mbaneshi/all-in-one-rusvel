@@ -18,7 +18,11 @@ fn req(uri: &str, token: Option<&str>) -> Request<Body> {
 
 #[tokio::test]
 async fn auth_no_env_passes_all() {
-    let h = build_harness_with_auth(AuthConfig { token: None, read_token: None }).await;
+    let h = build_harness_with_auth(AuthConfig {
+        token: None,
+        read_token: None,
+    })
+    .await;
     let res = h.router.oneshot(req("/api/sessions", None)).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 }

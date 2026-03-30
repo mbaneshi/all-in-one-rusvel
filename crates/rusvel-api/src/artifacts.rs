@@ -9,8 +9,8 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use rusvel_core::domain::ObjectFilter;
 use crate::AppState;
+use rusvel_core::domain::ObjectFilter;
 
 const STORE: &str = "artifacts";
 

@@ -2,7 +2,7 @@
 //!
 //! Routes are nested at `/mcp` (POST `/mcp`, GET `/mcp/sse`) via [`nest_mcp_http`].
 
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::convert::Infallible;
 use std::sync::Arc;
 use std::time::Duration;
@@ -25,19 +25,10 @@ use crate::RusvelMcp;
 use crate::jsonrpc::{self, JsonRpcResponse};
 
 /// OAuth / bearer placeholder for streamable HTTP MCP.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct McpAuth {
     pub enabled: bool,
     pub token: Option<String>,
-}
-
-impl Default for McpAuth {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            token: None,
-        }
-    }
 }
 
 impl McpAuth {
@@ -61,7 +52,7 @@ pub const MCP_SESSION_HEADER: &str = "mcp-session-id";
 pub struct McpHttpState {
     pub mcp: Arc<RusvelMcp>,
     pub auth: McpAuth,
-    sessions: Arc<RwLock<HashMap<String, ()>>>,
+    sessions: Arc<RwLock<HashSet<String>>>,
 }
 
 impl McpHttpState {
@@ -69,7 +60,7 @@ impl McpHttpState {
         Arc::new(Self {
             mcp,
             auth,
-            sessions: Arc::new(RwLock::new(HashMap::new())),
+            sessions: Arc::new(RwLock::new(HashSet::new())),
         })
     }
 }
@@ -124,7 +115,7 @@ async fn handle_mcp_post(
 
     {
         let mut s = state.sessions.write().await;
-        s.insert(session_id.clone(), ());
+        s.insert(session_id.clone());
     }
 
     match jsonrpc::dispatch(state.mcp.as_ref(), req).await {
@@ -178,7 +169,7 @@ async fn handle_mcp_sse(
 
     {
         let s = state.sessions.read().await;
-        if !s.contains_key(&session_id) {
+        if !s.contains(&session_id) {
             return Err(StatusCode::NOT_FOUND);
         }
     }

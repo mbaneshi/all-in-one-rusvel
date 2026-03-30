@@ -18,8 +18,7 @@ async fn list_departments_ok() {
 #[tokio::test]
 async fn get_department_by_id() {
     let mut h = build_harness().await;
-    let (status, body) =
-        json_request(&mut h.router, "GET", "/api/departments/forge", None).await;
+    let (status, body) = json_request(&mut h.router, "GET", "/api/departments/forge", None).await;
     // May return 200 with dept info or 404 if route is /api/dept/{id} pattern
     assert!(status == StatusCode::OK || status == StatusCode::NOT_FOUND);
     if status == StatusCode::OK {

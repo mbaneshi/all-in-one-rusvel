@@ -8,8 +8,7 @@ use common::{build_harness, json_request};
 #[tokio::test]
 async fn knowledge_stats_ok() {
     let mut h = build_harness().await;
-    let (status, _) =
-        json_request(&mut h.router, "GET", "/api/knowledge/stats", None).await;
+    let (status, _) = json_request(&mut h.router, "GET", "/api/knowledge/stats", None).await;
     // May return 200 with empty stats, or 503 if embedding not configured
     assert!(status == StatusCode::OK || status == StatusCode::SERVICE_UNAVAILABLE);
 }

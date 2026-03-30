@@ -113,7 +113,6 @@ pub struct TuiApp {
 impl TuiApp {
     pub fn new(data: TuiData) -> Self {
         let pipeline = pipeline_stats(&data.opportunities);
-        let n = data.terminal_panes.len();
         Self {
             session_name: data.session_name,
             latest_brief_summary: data.latest_brief_summary,
@@ -123,7 +122,7 @@ impl TuiApp {
             recent_events: data.recent_events,
             terminal_panes: data.terminal_panes,
             terminal_focus: false,
-            selected_pane: if n > 0 { 0 } else { 0 },
+            selected_pane: 0,
         }
     }
 
@@ -180,7 +179,7 @@ impl TuiApp {
                     self.terminal_focus = false;
                 }
                 KeyCode::Esc => break,
-                KeyCode::Char('t') | KeyCode::Char('T') => {
+                KeyCode::Char('t' | 'T') => {
                     self.terminal_focus = !self.terminal_focus;
                 }
                 KeyCode::Up if self.terminal_focus && !self.terminal_panes.is_empty() => {

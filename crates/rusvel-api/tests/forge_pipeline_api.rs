@@ -25,7 +25,12 @@ async fn post_forge_pipeline_returns_flow_execution() {
     )
     .await;
 
-    assert_eq!(status, StatusCode::OK, "body: {}", String::from_utf8_lossy(&body));
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "body: {}",
+        String::from_utf8_lossy(&body)
+    );
     let exec: FlowExecution = serde_json::from_slice(&body).expect("flow execution json");
     assert_eq!(exec.status, FlowExecutionStatus::Succeeded);
     assert!(!exec.id.to_string().is_empty());

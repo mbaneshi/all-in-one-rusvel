@@ -10,9 +10,11 @@
 
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'node:url';
 import { execSync } from 'child_process';
 import { buildManifest, type ScreenshotManifest } from './utils/screenshot';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RESULTS_DIR = path.join(__dirname, '..', 'test-results');
 const REPORT_FILE = path.join(RESULTS_DIR, 'visual-analysis.json');
 const API = 'http://localhost:3000';

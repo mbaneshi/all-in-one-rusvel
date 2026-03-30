@@ -15,7 +15,7 @@
 //!
 //! - Django `AppConfig` + `INSTALLED_APPS`
 //! - Linux kernel `module_init()` / `module_exit()`
-//! - VSCode `package.json#contributes` + `activate()` / `deactivate()`
+//! - `VSCode` `package.json#contributes` + `activate()` / `deactivate()`
 
 mod app;
 mod context;

@@ -45,8 +45,7 @@ async fn create_get_delete_rule_roundtrip() {
     let list: Vec<serde_json::Value> = serde_json::from_slice(&b3).unwrap();
     assert!(list.iter().any(|r| r["name"] == "no-mocks"));
 
-    let (st4, _) =
-        json_request(&mut h.router, "DELETE", &format!("/api/rules/{id}"), None).await;
+    let (st4, _) = json_request(&mut h.router, "DELETE", &format!("/api/rules/{id}"), None).await;
     assert_eq!(st4, StatusCode::NO_CONTENT);
 
     let (st5, _) = json_request(&mut h.router, "GET", &format!("/api/rules/{id}"), None).await;

@@ -23,6 +23,7 @@ pub struct ContextPackFlags {
 }
 
 impl ContextPackFlags {
+    #[must_use]
     pub fn overlay(&self, parent: &ContextPackFlags) -> ContextPackFlags {
         ContextPackFlags {
             session_name: self.session_name.or(parent.session_name),
@@ -43,6 +44,7 @@ impl ContextPackFlags {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)] // Resolved UI section toggles from layered config
 pub struct ResolvedContextPackFlags {
     pub session_name: bool,
     pub goals: bool,
@@ -107,6 +109,7 @@ pub struct ResolvedConfig {
 
 impl LayeredConfig {
     /// Merge self on top of parent. Self's non-None values win.
+    #[must_use]
     pub fn overlay(&self, parent: &LayeredConfig) -> LayeredConfig {
         LayeredConfig {
             model: self.model.clone().or(parent.model.clone()),
@@ -149,10 +152,7 @@ impl LayeredConfig {
             system_prompt: self.system_prompt.clone().unwrap_or_default(),
             add_dirs: self.add_dirs.clone().unwrap_or_default(),
             max_turns: self.max_turns,
-            chat_mode: self
-                .chat_mode
-                .clone()
-                .unwrap_or_else(|| "discuss".into()),
+            chat_mode: self.chat_mode.clone().unwrap_or_else(|| "discuss".into()),
         }
     }
 }
@@ -190,7 +190,6 @@ impl ResolvedConfig {
 /// Map stored department [`ResolvedConfig::permission_mode`] string to agent tool policy.
 pub fn tool_permission_mode_from_dept_config_str(s: &str) -> ToolPermissionMode {
     match s.to_ascii_lowercase().as_str() {
-        "auto" => ToolPermissionMode::Auto,
         "supervised" => ToolPermissionMode::Supervised,
         "locked" => ToolPermissionMode::Locked,
         _ => ToolPermissionMode::Auto,
@@ -203,11 +202,8 @@ pub fn resolve_cascade(
     dept: &LayeredConfig,
     session: &LayeredConfig,
 ) -> ResolvedConfig {
-    global
-        .overlay(&LayeredConfig::default()) // global on top of hard defaults
-        .overlay(&LayeredConfig::default());
-    // dept overrides global, session overrides dept
-    let merged = dept.overlay(global);
+    let with_global = global.overlay(&LayeredConfig::default());
+    let merged = dept.overlay(&with_global);
     let merged = session.overlay(&merged);
     merged.resolve()
 }

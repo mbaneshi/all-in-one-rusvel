@@ -68,9 +68,9 @@ fn extract_chat_id(payload: &Value, default: Option<&str>) -> Result<String> {
             return Ok(n.to_string());
         }
     }
-    default
-        .map(String::from)
-        .ok_or_else(|| RusvelError::Validation("telegram: missing chat_id and RUSVEL_TELEGRAM_CHAT_ID".into()))
+    default.map(String::from).ok_or_else(|| {
+        RusvelError::Validation("telegram: missing chat_id and RUSVEL_TELEGRAM_CHAT_ID".into())
+    })
 }
 
 #[async_trait]
@@ -82,10 +82,7 @@ impl ChannelPort for TelegramChannel {
     async fn send_message(&self, session_id: &SessionId, payload: Value) -> Result<()> {
         let text = extract_text(&payload)?;
         let chat_id = extract_chat_id(&payload, self.default_chat_id.as_deref())?;
-        let url = format!(
-            "https://api.telegram.org/bot{}/sendMessage",
-            self.token
-        );
+        let url = format!("https://api.telegram.org/bot{}/sendMessage", self.token);
         let body = serde_json::json!({
             "chat_id": chat_id,
             "text": format!("[session {session_id}] {text}"),

@@ -11,11 +11,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 
 fn validate_identifier(name: &str) -> rusvel_core::Result<&str> {
-    if name.is_empty()
-        || !name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_')
-    {
+    if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
         return Err(RusvelError::Validation(format!(
             "invalid SQL identifier: {name}"
         )));
@@ -25,7 +21,9 @@ fn validate_identifier(name: &str) -> rusvel_core::Result<&str> {
 
 fn cost_events_spend_snapshot_inner(db: &Connection) -> CostEventsSpendSnapshot {
     let event_row_count: u64 = db
-        .query_row("SELECT COUNT(*) FROM cost_events", [], |r| r.get::<_, i64>(0))
+        .query_row("SELECT COUNT(*) FROM cost_events", [], |r| {
+            r.get::<_, i64>(0)
+        })
         .unwrap_or(0) as u64;
     if event_row_count == 0 {
         return CostEventsSpendSnapshot {
@@ -244,7 +242,9 @@ impl Database {
     pub async fn cost_events_spend_snapshot(&self) -> rusvel_core::Result<CostEventsSpendSnapshot> {
         let conn = self.conn.clone();
         tokio::task::spawn_blocking(move || {
-            let db = conn.lock().map_err(|e| RusvelError::Storage(format!("mutex poisoned: {e}")))?;
+            let db = conn
+                .lock()
+                .map_err(|e| RusvelError::Storage(format!("mutex poisoned: {e}")))?;
             Ok(cost_events_spend_snapshot_inner(&db))
         })
         .await
@@ -736,7 +736,9 @@ impl ObjectStore for Database {
         let kind = kind.to_string();
         let id = id.to_string();
         tokio::task::spawn_blocking(move || {
-            let db = conn.lock().map_err(|e| RusvelError::Storage(format!("mutex poisoned: {e}")))?;
+            let db = conn
+                .lock()
+                .map_err(|e| RusvelError::Storage(format!("mutex poisoned: {e}")))?;
             let result: Option<String> = db
                 .query_row(
                     "SELECT data FROM objects WHERE kind = ?1 AND id = ?2",
@@ -760,7 +762,9 @@ impl ObjectStore for Database {
         let kind = kind.to_string();
         let id = id.to_string();
         tokio::task::spawn_blocking(move || {
-            let db = conn.lock().map_err(|e| RusvelError::Storage(format!("mutex poisoned: {e}")))?;
+            let db = conn
+                .lock()
+                .map_err(|e| RusvelError::Storage(format!("mutex poisoned: {e}")))?;
             db.execute(
                 "DELETE FROM objects WHERE kind = ?1 AND id = ?2",
                 params![kind, id],
@@ -780,58 +784,60 @@ impl ObjectStore for Database {
         let conn = self.conn.clone();
         let kind = kind.to_string();
         tokio::task::spawn_blocking(move || {
-        let db = conn.lock().map_err(|e| RusvelError::Storage(format!("mutex poisoned: {e}")))?;
-        let mut sql = String::from("SELECT data FROM objects WHERE kind = ?1");
-        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        param_values.push(Box::new(kind.to_string()));
-        let mut idx = 2;
+            let db = conn
+                .lock()
+                .map_err(|e| RusvelError::Storage(format!("mutex poisoned: {e}")))?;
+            let mut sql = String::from("SELECT data FROM objects WHERE kind = ?1");
+            let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+            param_values.push(Box::new(kind.to_string()));
+            let mut idx = 2;
 
-        if let Some(ref sid) = filter.session_id {
-            sql.push_str(&format!(" AND json_extract(data, '$.session_id') = ?{idx}"));
-            param_values.push(Box::new(sid.to_string()));
-            idx += 1;
-        }
-
-        if let Some(limit) = filter.limit {
-            sql.push_str(&format!(" LIMIT ?{idx}"));
-            param_values.push(Box::new(i64::from(limit)));
-            idx += 1;
-        }
-        if let Some(offset) = filter.offset {
-            // LIMIT is required for OFFSET in SQLite; add a large default if
-            // no explicit limit was supplied.
-            if filter.limit.is_none() {
-                sql.push_str(&format!(" LIMIT ?{idx}"));
-                param_values.push(Box::new(i64::MAX));
+            if let Some(ref sid) = filter.session_id {
+                sql.push_str(&format!(" AND json_extract(data, '$.session_id') = ?{idx}"));
+                param_values.push(Box::new(sid.to_string()));
                 idx += 1;
             }
-            sql.push_str(&format!(" OFFSET ?{idx}"));
-            param_values.push(Box::new(i64::from(offset)));
-            let _ = idx;
-        }
 
-        let mut stmt = db
-            .prepare(&sql)
-            .map_err(|e| RusvelError::Storage(e.to_string()))?;
+            if let Some(limit) = filter.limit {
+                sql.push_str(&format!(" LIMIT ?{idx}"));
+                param_values.push(Box::new(i64::from(limit)));
+                idx += 1;
+            }
+            if let Some(offset) = filter.offset {
+                // LIMIT is required for OFFSET in SQLite; add a large default if
+                // no explicit limit was supplied.
+                if filter.limit.is_none() {
+                    sql.push_str(&format!(" LIMIT ?{idx}"));
+                    param_values.push(Box::new(i64::MAX));
+                    idx += 1;
+                }
+                sql.push_str(&format!(" OFFSET ?{idx}"));
+                param_values.push(Box::new(i64::from(offset)));
+                let _ = idx;
+            }
 
-        let params_refs: Vec<&dyn rusqlite::types::ToSql> = param_values
-            .iter()
-            .map(std::convert::AsRef::as_ref)
-            .collect();
+            let mut stmt = db
+                .prepare(&sql)
+                .map_err(|e| RusvelError::Storage(e.to_string()))?;
 
-        let rows = stmt
-            .query_map(params_refs.as_slice(), |row| {
-                let data: String = row.get(0)?;
-                Ok(data)
-            })
-            .map_err(|e| RusvelError::Storage(e.to_string()))?;
+            let params_refs: Vec<&dyn rusqlite::types::ToSql> = param_values
+                .iter()
+                .map(std::convert::AsRef::as_ref)
+                .collect();
 
-        let mut objects = Vec::new();
-        for row in rows {
-            let data = row.map_err(|e| RusvelError::Storage(e.to_string()))?;
-            objects.push(serde_json::from_str(&data)?);
-        }
-        Ok(objects)
+            let rows = stmt
+                .query_map(params_refs.as_slice(), |row| {
+                    let data: String = row.get(0)?;
+                    Ok(data)
+                })
+                .map_err(|e| RusvelError::Storage(e.to_string()))?;
+
+            let mut objects = Vec::new();
+            for row in rows {
+                let data = row.map_err(|e| RusvelError::Storage(e.to_string()))?;
+                objects.push(serde_json::from_str(&data)?);
+            }
+            Ok(objects)
         })
         .await
         .map_err(|e| RusvelError::Internal(format!("spawn_blocking: {e}")))?
@@ -1031,7 +1037,9 @@ impl SessionStore for Database {
         let conn = self.conn.clone();
         let thread = thread.clone();
         tokio::task::spawn_blocking(move || {
-            let db = conn.lock().map_err(|e| RusvelError::Storage(format!("mutex poisoned: {e}")))?;
+            let db = conn
+                .lock()
+                .map_err(|e| RusvelError::Storage(format!("mutex poisoned: {e}")))?;
             db.execute(
                 "INSERT INTO threads (id, run_id, channel, messages, metadata)
                  VALUES (?1, ?2, ?3, ?4, ?5)
@@ -1057,7 +1065,9 @@ impl SessionStore for Database {
         let conn = self.conn.clone();
         let id = *id;
         tokio::task::spawn_blocking(move || {
-            let db = conn.lock().map_err(|e| RusvelError::Storage(format!("mutex poisoned: {e}")))?;
+            let db = conn
+                .lock()
+                .map_err(|e| RusvelError::Storage(format!("mutex poisoned: {e}")))?;
             let result = db
                 .query_row(
                     "SELECT id, run_id, channel, messages, metadata FROM threads WHERE id = ?1",
@@ -1080,7 +1090,9 @@ impl SessionStore for Database {
         let conn = self.conn.clone();
         let run_id = *run_id;
         tokio::task::spawn_blocking(move || {
-            let db = conn.lock().map_err(|e| RusvelError::Storage(format!("mutex poisoned: {e}")))?;
+            let db = conn
+                .lock()
+                .map_err(|e| RusvelError::Storage(format!("mutex poisoned: {e}")))?;
             let mut stmt = db
                 .prepare(
                     "SELECT id, run_id, channel, messages, metadata FROM threads WHERE run_id = ?1",
@@ -1346,7 +1358,9 @@ impl JobStore for Database {
         let conn = self.conn.clone();
         let job = job.clone();
         tokio::task::spawn_blocking(move || {
-            let db = conn.lock().map_err(|e| RusvelError::Storage(format!("mutex poisoned: {e}")))?;
+            let db = conn
+                .lock()
+                .map_err(|e| RusvelError::Storage(format!("mutex poisoned: {e}")))?;
             db.execute(
                 "UPDATE jobs SET
                    status = ?1, payload = ?2, scheduled_at = ?3, started_at = ?4,
@@ -1707,7 +1721,9 @@ impl MetricStore for Database {
         let conn = self.conn.clone();
         let point = point.clone();
         tokio::task::spawn_blocking(move || {
-            let db = conn.lock().map_err(|e| RusvelError::Storage(format!("mutex poisoned: {e}")))?;
+            let db = conn
+                .lock()
+                .map_err(|e| RusvelError::Storage(format!("mutex poisoned: {e}")))?;
             db.execute(
                 "INSERT INTO metrics (name, value, tags, recorded_at, metadata)
                  VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -1729,9 +1745,12 @@ impl MetricStore for Database {
     async fn query(&self, filter: MetricFilter) -> rusvel_core::Result<Vec<MetricPoint>> {
         let conn = self.conn.clone();
         tokio::task::spawn_blocking(move || {
-            let db = conn.lock().map_err(|e| RusvelError::Storage(format!("mutex poisoned: {e}")))?;
-            let mut sql =
-                String::from("SELECT name, value, tags, recorded_at, metadata FROM metrics WHERE 1=1");
+            let db = conn
+                .lock()
+                .map_err(|e| RusvelError::Storage(format!("mutex poisoned: {e}")))?;
+            let mut sql = String::from(
+                "SELECT name, value, tags, recorded_at, metadata FROM metrics WHERE 1=1",
+            );
             let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
             let mut idx = 1;
 
@@ -1803,7 +1822,9 @@ impl MetricStore for Database {
         let conn = self.conn.clone();
         let event = event.clone();
         tokio::task::spawn_blocking(move || {
-            let db = conn.lock().map_err(|e| RusvelError::Storage(format!("mutex poisoned: {e}")))?;
+            let db = conn
+                .lock()
+                .map_err(|e| RusvelError::Storage(format!("mutex poisoned: {e}")))?;
             db.execute(
                 "INSERT INTO cost_events (id, session_id, department_id, model, provider,
                  input_tokens, output_tokens, cost_usd, operation, created_at, metadata)
@@ -1840,7 +1861,9 @@ impl MetricStore for Database {
         let sid = session_id.map(|s| s.to_string());
         let dept = department_id.map(str::to_string);
         tokio::task::spawn_blocking(move || {
-            let db = conn.lock().map_err(|e| RusvelError::Storage(format!("mutex poisoned: {e}")))?;
+            let db = conn
+                .lock()
+                .map_err(|e| RusvelError::Storage(format!("mutex poisoned: {e}")))?;
             let mut sql = String::from(
                 "SELECT id, session_id, department_id, model, provider, input_tokens, output_tokens,
                         cost_usd, operation, created_at, metadata FROM cost_events WHERE 1=1",

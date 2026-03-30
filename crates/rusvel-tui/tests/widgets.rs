@@ -111,7 +111,10 @@ fn tasks_widget_renders_items() {
 
 #[test]
 fn goals_widget_renders_table() {
-    let goals = vec![make_goal("Launch MVP", 0.6), make_goal("Reach 100 users", 0.2)];
+    let goals = vec![
+        make_goal("Launch MVP", 0.6),
+        make_goal("Reach 100 users", 0.2),
+    ];
     let backend = TestBackend::new(80, 10);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
@@ -139,7 +142,10 @@ fn pipeline_stats_counts_stages() {
 
 #[test]
 fn events_widget_renders() {
-    let events = vec![make_event("forge.plan.created"), make_event("code.analyzed")];
+    let events = vec![
+        make_event("forge.plan.created"),
+        make_event("code.analyzed"),
+    ];
     let backend = TestBackend::new(80, 10);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal

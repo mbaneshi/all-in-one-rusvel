@@ -356,7 +356,7 @@ impl AgentRuntime {
             tools,
             temperature: None,
             max_tokens: None,
-        metadata: merge_llm_request_metadata(config),
+            metadata: merge_llm_request_metadata(config),
         }
     }
 
@@ -734,7 +734,7 @@ async fn run_streaming_loop(
                     tool_calls,
                     usage: total_usage,
                     cost_estimate: 0.0,
-        metadata: serde_json::json!({}),
+                    metadata: serde_json::json!({}),
                 });
             }
             FinishReason::ToolUse => {
@@ -779,9 +779,7 @@ async fn run_streaming_loop(
                     }
                 };
 
-                if let Some(msg) =
-                    agent_permission_blocks_tool(config, &tool_name, &tool_defs)
-                {
+                if let Some(msg) = agent_permission_blocks_tool(config, &tool_name, &tool_defs) {
                     tool_calls += 1;
                     let _ = tx
                         .send(AgentEvent::ToolResult {
@@ -882,7 +880,7 @@ async fn run_streaming_loop(
                             content: Content::text(
                                 "[REFLECTION REQUIRED] 3 consecutive tool failures. \
                                  Stop and reassess your approach. What assumption is wrong? \
-                                 Try a completely different strategy."
+                                 Try a completely different strategy.",
                             ),
                         });
                     }
@@ -1000,7 +998,7 @@ impl AgentPort for AgentRuntime {
                         tool_calls,
                         usage: total_usage,
                         cost_estimate: 0.0,
-        metadata: serde_json::json!({}),
+                        metadata: serde_json::json!({}),
                     };
 
                     self.runs.write().await.entry(*run_id).and_modify(|s| {
@@ -1052,11 +1050,8 @@ impl AgentPort for AgentRuntime {
                         }
                     };
 
-                    if let Some(msg) = agent_permission_blocks_tool(
-                        &config,
-                        &tool_name,
-                        &tool_defs,
-                    ) {
+                    if let Some(msg) = agent_permission_blocks_tool(&config, &tool_name, &tool_defs)
+                    {
                         tool_calls += 1;
                         messages.push(LlmMessage {
                             role: LlmRole::Tool,
@@ -1140,7 +1135,7 @@ impl AgentPort for AgentRuntime {
                                 content: Content::text(
                                     "[REFLECTION REQUIRED] 3 consecutive tool failures. \
                                      Stop and reassess your approach. What assumption is wrong? \
-                                     Try a completely different strategy."
+                                     Try a completely different strategy.",
                                 ),
                             });
                         }
@@ -1248,7 +1243,7 @@ mod tests {
             Ok(ToolResult {
                 success: true,
                 output: Content::text("tool result"),
-        metadata: serde_json::json!({}),
+                metadata: serde_json::json!({}),
             })
         }
 
@@ -1305,7 +1300,7 @@ mod tests {
             budget_limit: None,
             max_iterations: None,
             permission_mode: Default::default(),
-        metadata: serde_json::json!({}),
+            metadata: serde_json::json!({}),
         }
     }
 
@@ -1317,7 +1312,7 @@ mod tests {
                 input_tokens: 10,
                 output_tokens: 20,
             },
-        metadata: serde_json::json!({}),
+            metadata: serde_json::json!({}),
         }
     }
 
@@ -1335,7 +1330,7 @@ mod tests {
                 input_tokens: 10,
                 output_tokens: 5,
             },
-        metadata: serde_json::json!({}),
+            metadata: serde_json::json!({}),
         }
     }
 

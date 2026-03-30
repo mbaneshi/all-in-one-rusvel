@@ -157,7 +157,7 @@ impl OutreachManager {
             steps,
             status: SequenceStatus::Draft,
             created_at: Utc::now(),
-        metadata: serde_json::json!({}),
+            metadata: serde_json::json!({}),
         };
         let id = seq.id;
         let json = serde_json::to_value(&seq)?;
@@ -254,7 +254,7 @@ impl OutreachManager {
                 kind: JobKind::OutreachSend,
                 payload,
                 max_retries: 2,
-        metadata: serde_json::json!({
+                metadata: serde_json::json!({
                     "department": "gtm",
                     "requires_approval": true,
                 }),
@@ -424,7 +424,7 @@ impl OutreachManager {
                         "template": next_step.template,
                     }),
                     max_retries: 2,
-        metadata: serde_json::json!({
+                    metadata: serde_json::json!({
                         "department": "gtm",
                         "requires_approval": true,
                     }),
@@ -442,7 +442,7 @@ impl OutreachManager {
                     "contact_id": contact_id.to_string(),
                     "step_index": step_index,
                 }),
-        metadata: serde_json::json!({"engine": "gtm"}),
+                metadata: serde_json::json!({"engine": "gtm"}),
             };
 
             return Ok(OutreachSendDispatch::Complete { result, next });
@@ -476,7 +476,7 @@ impl OutreachManager {
 
         Ok(OutreachSendDispatch::HoldForApproval(JobResult {
             output: draft,
-        metadata: serde_json::json!({"engine": "gtm", "phase": "draft"}),
+            metadata: serde_json::json!({"engine": "gtm", "phase": "draft"}),
         }))
     }
 
@@ -501,7 +501,7 @@ impl OutreachManager {
                 "status": "sent",
             }),
             created_at: Utc::now(),
-        metadata: serde_json::json!({}),
+            metadata: serde_json::json!({}),
         };
         events.emit(event).await?;
         Ok(())
@@ -560,7 +560,7 @@ impl OutreachManager {
             due_date,
             context,
             completed: false,
-        metadata: serde_json::json!({}),
+            metadata: serde_json::json!({}),
         };
         let json = serde_json::to_value(&fu)?;
         self.storage
@@ -603,7 +603,7 @@ impl OutreachManager {
             budget_limit: Some(0.05),
             max_iterations: None,
             permission_mode: Default::default(),
-        metadata: serde_json::json!({}),
+            metadata: serde_json::json!({}),
         };
         let run_id = self.agent.create(config).await?;
         let output = self.agent.run(&run_id, Content::text(prompt)).await?;

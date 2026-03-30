@@ -87,7 +87,7 @@ pub async fn spawn_browser_log_bridge(
                         tracing::debug!(error = %e, "inject_browser_event_log failed");
                     }
                 }
-                Err(RecvError::Lagged(_)) => continue,
+                Err(RecvError::Lagged(_)) => {}
                 Err(RecvError::Closed) => break,
             }
         }

@@ -175,13 +175,7 @@ async fn spend_from_session_query(
     state: &Arc<AppState>,
     q: &SpendQuery,
     session_totals: &HashMap<String, f64>,
-) -> (
-    Option<String>,
-    Option<f64>,
-    Option<f64>,
-    bool,
-    Option<f64>,
-) {
+) -> (Option<String>, Option<f64>, Option<f64>, bool, Option<f64>) {
     let mut session_id_out: Option<String> = None;
     let mut session_total_usd: Option<f64> = None;
     let mut session_budget_limit_usd: Option<f64> = None;
@@ -250,8 +244,13 @@ async fn collect_spend(
             agg.total_usd
         };
 
-        let (session_id, session_total_usd, session_budget_limit_usd, budget_warning, budget_usage_ratio) =
-            spend_from_session_query(state, q, &agg.by_session).await;
+        let (
+            session_id,
+            session_total_usd,
+            session_budget_limit_usd,
+            budget_warning,
+            budget_usage_ratio,
+        ) = spend_from_session_query(state, q, &agg.by_session).await;
 
         return Ok(SpendResponse {
             total_usd,
@@ -277,16 +276,16 @@ async fn collect_spend(
     let by_model: HashMap<String, ModelSpend> = snapshot
         .by_model
         .into_iter()
-        .map(|(k, (usd, tokens))| {
-            (
-                k,
-                ModelSpend { usd, tokens },
-            )
-        })
+        .map(|(k, (usd, tokens))| (k, ModelSpend { usd, tokens }))
         .collect();
 
-    let (session_id, session_total_usd, session_budget_limit_usd, budget_warning, budget_usage_ratio) =
-        spend_from_session_query(state, q, &snapshot.by_session_usd).await;
+    let (
+        session_id,
+        session_total_usd,
+        session_budget_limit_usd,
+        budget_warning,
+        budget_usage_ratio,
+    ) = spend_from_session_query(state, q, &snapshot.by_session_usd).await;
 
     Ok(SpendResponse {
         total_usd,
@@ -355,12 +354,7 @@ async fn query_cost_events(
     let to = q.to.as_deref().and_then(parse_costs_rfc3339);
     state
         .database
-        .query_costs(
-            session_id.as_ref(),
-            q.department_id.as_deref(),
-            from,
-            to,
-        )
+        .query_costs(session_id.as_ref(), q.department_id.as_deref(), from, to)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
@@ -396,7 +390,10 @@ pub async fn get_costs_summary(
     let mut acc: HashMap<String, (f64, u64)> = HashMap::new();
     for e in events {
         let key = match gb.as_str() {
-            "department" => e.department_id.clone().unwrap_or_else(|| "_none".to_string()),
+            "department" => e
+                .department_id
+                .clone()
+                .unwrap_or_else(|| "_none".to_string()),
             "model" => e.model.clone(),
             "operation" => e.operation.clone(),
             _ => unreachable!(),
@@ -413,6 +410,10 @@ pub async fn get_costs_summary(
             total_tokens,
         })
         .collect();
-    rows.sort_by(|a, b| b.total_usd.partial_cmp(&a.total_usd).unwrap_or(std::cmp::Ordering::Equal));
+    rows.sort_by(|a, b| {
+        b.total_usd
+            .partial_cmp(&a.total_usd)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     Ok(Json(rows))
 }

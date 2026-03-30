@@ -38,9 +38,7 @@ pub struct CreateGoalBody {
 
 // ── Handlers ─────────────────────────────────────────────────────
 
-pub async fn health(
-    State(state): State<Arc<AppState>>,
-) -> Json<serde_json::Value> {
+pub async fn health(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     let uptime_seconds = state.boot_time.elapsed().as_secs();
 
     let db_check = match state.database.execute_sql("SELECT 1") {

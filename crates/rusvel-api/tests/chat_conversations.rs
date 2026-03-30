@@ -7,8 +7,7 @@ use common::{build_harness, json_request};
 #[tokio::test]
 async fn list_conversations_empty() {
     let mut h = build_harness().await;
-    let (status, body) =
-        json_request(&mut h.router, "GET", "/api/chat/conversations", None).await;
+    let (status, body) = json_request(&mut h.router, "GET", "/api/chat/conversations", None).await;
     assert_eq!(status, StatusCode::OK);
     let list: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
     assert!(list.is_empty());

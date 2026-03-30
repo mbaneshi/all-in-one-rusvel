@@ -144,7 +144,7 @@ impl ContentWriter {
             budget_limit: None,
             max_iterations: None,
             permission_mode: Default::default(),
-        metadata: serde_json::json!({}),
+            metadata: serde_json::json!({}),
         };
         let run_id = self.agent.create(config).await?;
         let output = self.agent.run(&run_id, Content::text(prompt)).await?;
@@ -166,7 +166,7 @@ impl ContentWriter {
             approval: ApprovalStatus::Pending,
             scheduled_at: None,
             published_at: None,
-        metadata: serde_json::json!({}),
+            metadata: serde_json::json!({}),
         })
     }
 
@@ -195,7 +195,7 @@ impl ContentWriter {
             budget_limit: None,
             max_iterations: None,
             permission_mode: Default::default(),
-        metadata: serde_json::json!({}),
+            metadata: serde_json::json!({}),
         };
         let run_id = self.agent.create(config).await?;
         let output = self.agent.run(&run_id, Content::text(prompt)).await?;
@@ -218,7 +218,7 @@ impl ContentWriter {
             budget_limit: None,
             max_iterations: None,
             permission_mode: Default::default(),
-        metadata: serde_json::json!({}),
+            metadata: serde_json::json!({}),
         };
         let run_id = self.agent.create(config).await?;
         let output = self.agent.run(&run_id, Content::text(prompt)).await?;
@@ -275,7 +275,7 @@ mod prompt_tests {
             total_symbols: 200,
             top_symbols: vec!["main".into(), "run".into()],
             largest_function: Some("process_batch".into()),
-        metadata: Default::default(),
+            metadata: Default::default(),
         }
     }
 

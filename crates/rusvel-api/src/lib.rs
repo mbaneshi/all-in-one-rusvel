@@ -49,9 +49,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use axum::Router;
+use axum::http::{HeaderValue, Method};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
-use axum::http::{HeaderValue, Method};
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
@@ -64,6 +64,7 @@ use forge_engine::ForgeEngine;
 use gtm_engine::GtmEngine;
 use harvest_engine::HarvestEngine;
 use rusvel_agent::{AgentRuntime, ContextPack};
+use rusvel_channel::ChannelPort;
 use rusvel_core::domain::UserProfile;
 use rusvel_core::id::SessionId;
 use rusvel_core::ports::{
@@ -71,7 +72,6 @@ use rusvel_core::ports::{
     TerminalPort, ToolPort, VectorStorePort,
 };
 use rusvel_core::registry::DepartmentRegistry;
-use rusvel_channel::ChannelPort;
 use rusvel_cron::CronScheduler;
 use rusvel_db::Database;
 use rusvel_webhook::WebhookReceiver;
@@ -82,8 +82,7 @@ pub struct ContextPackCache {
     pub(crate) inner: std::sync::Mutex<HashMap<(SessionId, String), (Instant, ContextPack)>>,
 }
 
-pub(crate) const CONTEXT_PACK_CACHE_TTL: std::time::Duration =
-    std::time::Duration::from_secs(45);
+pub(crate) const CONTEXT_PACK_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(45);
 
 /// Shared application state injected into all handlers.
 pub struct AppState {
@@ -315,7 +314,10 @@ pub fn build_router_with_frontend(
             post(engine_routes::harvest_score),
         )
         .route("/api/dept/harvest/scan", post(engine_routes::harvest_scan))
-        .route("/api/dept/harvest/ingest", post(engine_routes::harvest_ingest))
+        .route(
+            "/api/dept/harvest/ingest",
+            post(engine_routes::harvest_ingest),
+        )
         .route(
             "/api/dept/harvest/proposal",
             post(engine_routes::harvest_proposal),
@@ -448,7 +450,10 @@ pub fn build_router_with_frontend(
             get(artifacts::get_artifact).delete(artifacts::delete_artifact),
         )
         // Connectors (GitHub PAT)
-        .route("/api/connectors/github/status", get(connectors::github_status))
+        .route(
+            "/api/connectors/github/status",
+            get(connectors::github_status),
+        )
         .route(
             "/api/connectors/github/pat",
             axum::routing::post(connectors::github_set_pat).delete(connectors::github_clear_pat),

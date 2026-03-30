@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use content_engine::ContentEngine;
-use harvest_engine::{scan_from_params, HarvestEngine, HarvestScanParams};
+use harvest_engine::{HarvestEngine, HarvestScanParams, scan_from_params};
 use rusvel_core::domain::ContentKind;
 use rusvel_core::error::{Result, RusvelError};
 use rusvel_core::id::SessionId;

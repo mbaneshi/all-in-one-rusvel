@@ -91,8 +91,8 @@ pub async fn get_mcp_server(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     match val {
         Some(v) => {
-            let server: McpServerConfig =
-                serde_json::from_value(v).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            let server: McpServerConfig = serde_json::from_value(v)
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
             Ok(Json(server))
         }
         None => Err((StatusCode::NOT_FOUND, format!("MCP server {id} not found"))),

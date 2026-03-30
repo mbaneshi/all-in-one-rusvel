@@ -404,7 +404,7 @@ mod tests {
                 tool_calls: 0,
                 usage: LlmUsage::default(),
                 cost_estimate: 0.0,
-        metadata: serde_json::json!({}),
+                metadata: serde_json::json!({}),
             })
         }
 

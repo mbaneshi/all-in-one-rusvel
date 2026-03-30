@@ -35,7 +35,7 @@ pub fn register(engine: &Arc<DistroEngine>, ctx: &mut RegistrationContext) {
                 let avg_pos = if keywords.is_empty() {
                     0.0
                 } else {
-                    positions.iter().map(|&p| p as f64).sum::<f64>() / keywords.len() as f64
+                    positions.iter().map(|&p| f64::from(p)).sum::<f64>() / keywords.len() as f64
                 };
                 let report = serde_json::json!({
                     "keyword_count": keywords.len(),

@@ -40,13 +40,23 @@ async fn create_get_delete_mcp_server_roundtrip() {
     let created: serde_json::Value = serde_json::from_slice(&body).unwrap();
     let id = created["id"].as_str().unwrap();
 
-    let (st2, b2) =
-        json_request(&mut h.router, "GET", &format!("/api/mcp-servers/{id}"), None).await;
+    let (st2, b2) = json_request(
+        &mut h.router,
+        "GET",
+        &format!("/api/mcp-servers/{id}"),
+        None,
+    )
+    .await;
     assert_eq!(st2, StatusCode::OK);
     let got: serde_json::Value = serde_json::from_slice(&b2).unwrap();
     assert_eq!(got["name"], "test-mcp");
 
-    let (st3, _) =
-        json_request(&mut h.router, "DELETE", &format!("/api/mcp-servers/{id}"), None).await;
+    let (st3, _) = json_request(
+        &mut h.router,
+        "DELETE",
+        &format!("/api/mcp-servers/{id}"),
+        None,
+    )
+    .await;
     assert_eq!(st3, StatusCode::NO_CONTENT);
 }

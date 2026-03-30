@@ -113,8 +113,8 @@ pub async fn get_hook(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     match val {
         Some(v) => {
-            let hook: HookDefinition =
-                serde_json::from_value(v).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            let hook: HookDefinition = serde_json::from_value(v)
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
             Ok(Json(hook))
         }
         None => Err((StatusCode::NOT_FOUND, format!("Hook {id} not found"))),

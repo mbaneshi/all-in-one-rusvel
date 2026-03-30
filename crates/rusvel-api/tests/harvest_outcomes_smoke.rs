@@ -151,9 +151,8 @@ async fn gtm_deal_won_with_opportunity_id_records_harvest_outcome() {
     .await;
     assert_eq!(st, StatusCode::OK);
     let contact_json: serde_json::Value = serde_json::from_slice(&contact_bytes).unwrap();
-    let contact_id = ContactId::from_uuid(
-        uuid::Uuid::parse_str(contact_json["id"].as_str().unwrap()).unwrap(),
-    );
+    let contact_id =
+        ContactId::from_uuid(uuid::Uuid::parse_str(contact_json["id"].as_str().unwrap()).unwrap());
 
     let deal_id = DealId::new();
     let deal = Deal {

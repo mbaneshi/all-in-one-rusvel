@@ -937,7 +937,7 @@ async fn main() -> Result<()> {
                                 tracing::debug!(error = %e, "harvest on_data_captured");
                             }
                         }
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                     }
                 }
@@ -1196,7 +1196,9 @@ async fn main() -> Result<()> {
                                         Err(e)
                                     }
                                 }
-                            } else if event_kind == harvest_engine::events::HARVEST_AUTO_SCAN_CRON_KIND {
+                            } else if event_kind
+                                == harvest_engine::events::HARVEST_AUTO_SCAN_CRON_KIND
+                            {
                                 let sid = job.session_id;
                                 let params =
                                     harvest_engine::HarvestScanParams::from_job_payload(&payload);
@@ -1370,7 +1372,7 @@ async fn main() -> Result<()> {
                     tracing::info!("Job worker shutting down");
                     break;
                 }
-                _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+                () = tokio::time::sleep(Duration::from_secs(5)) => {}
             }
         }
     });
@@ -1632,8 +1634,8 @@ async fn main() -> Result<()> {
         let addr: SocketAddr = "127.0.0.1:3000".parse()?;
         tracing::info!("RUSVEL starting on http://{addr} (MCP HTTP)");
 
-        let _cron_tick_task_mcp_http =
-            cron_scheduler.spawn_interval_ticker(std::time::Duration::from_secs(30), shutdown_rx.clone());
+        let _cron_tick_task_mcp_http = cron_scheduler
+            .spawn_interval_ticker(std::time::Duration::from_secs(30), shutdown_rx.clone());
 
         let mut srv_rx = shutdown_rx.clone();
         let shutdown_fut = async move {
@@ -1763,8 +1765,8 @@ async fn main() -> Result<()> {
         let addr: SocketAddr = "127.0.0.1:3000".parse()?;
         tracing::info!("RUSVEL starting on http://{addr}");
 
-        let _cron_tick_task =
-            cron_scheduler.spawn_interval_ticker(std::time::Duration::from_secs(30), shutdown_rx.clone());
+        let _cron_tick_task = cron_scheduler
+            .spawn_interval_ticker(std::time::Duration::from_secs(30), shutdown_rx.clone());
 
         let mut srv_rx = shutdown_rx.clone();
         let shutdown_fut = async move {

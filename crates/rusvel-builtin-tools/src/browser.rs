@@ -176,10 +176,10 @@ pub async fn register(registry: &ToolRegistry, browser: Arc<dyn BrowserPort>) {
                     })?;
 
                     let tab_id = if let Some(id) = args.get("tab_id").and_then(|v| v.as_str()) {
-                        if !id.is_empty() {
-                            id.to_string()
-                        } else {
+                        if id.is_empty() {
                             String::new()
+                        } else {
+                            id.to_string()
                         }
                     } else {
                         String::new()

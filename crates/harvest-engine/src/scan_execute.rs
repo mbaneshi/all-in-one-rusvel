@@ -6,9 +6,9 @@ use rusvel_core::id::SessionId;
 use rusvel_core::ports::BrowserPort;
 use rusvel_core::{Opportunity, Result, RusvelError};
 
+use crate::HarvestEngine;
 use crate::cdp_source::CdpSource;
 use crate::source::{FreelancerRssSource, MockSource, UpworkRssSource};
-use crate::HarvestEngine;
 
 /// Parameters for one or more harvest sources (mirrors HTTP `HarvestScanRequest` / job payload).
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -61,7 +61,11 @@ impl HarvestScanParams {
                     v.as_str().map(String::from)
                 }
             })
-            .or_else(|| payload.get("cdpExtractJs").and_then(|v| v.as_str().map(String::from)));
+            .or_else(|| {
+                payload
+                    .get("cdpExtractJs")
+                    .and_then(|v| v.as_str().map(String::from))
+            });
         let cdp_endpoint = payload
             .get("cdp_endpoint")
             .or_else(|| payload.get("cdpEndpoint"))

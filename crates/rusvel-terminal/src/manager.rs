@@ -160,13 +160,13 @@ impl ManagerInner {
                     code = if status.success() {
                         0
                     } else {
-                        status.exit_code() as i32
+                        i32::try_from(status.exit_code()).unwrap_or(-1)
                     };
                 } else if let Ok(status) = child.wait() {
                     code = if status.success() {
                         0
                     } else {
-                        status.exit_code() as i32
+                        i32::try_from(status.exit_code()).unwrap_or(-1)
                     };
                 }
             }
@@ -328,7 +328,7 @@ impl TerminalPort for TerminalManager {
         let mut cmd_builder = CommandBuilder::new("sh");
         cmd_builder.arg("-c");
         cmd_builder.arg(cmd);
-        if cwd.as_os_str().len() > 0 {
+        if !cwd.as_os_str().is_empty() {
             cmd_builder.cwd(cwd);
         }
 

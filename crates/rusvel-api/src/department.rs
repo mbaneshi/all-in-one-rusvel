@@ -32,9 +32,9 @@ use rusvel_core::ports::{AgentPort, StoragePort};
 use rusvel_core::registry::DepartmentDef;
 use uuid::Uuid;
 
-use crate::{AppState, CONTEXT_PACK_CACHE_TTL};
 use crate::chat::{ChatMessage, ChatRequest, ConversationSummary};
 use crate::sse_helpers;
+use crate::{AppState, CONTEXT_PACK_CACHE_TTL};
 
 // ── Department Config (stored per-dept as LayeredConfig) ─────
 
@@ -470,7 +470,12 @@ pub async fn dept_chat(
         }
     }
 
-    if let Ok(Some(conn)) = state.storage.objects().get("github_connector", "default").await {
+    if let Ok(Some(conn)) = state
+        .storage
+        .objects()
+        .get("github_connector", "default")
+        .await
+    {
         if conn
             .get("token")
             .and_then(|t| t.as_str())
@@ -687,7 +692,7 @@ pub async fn dept_chat(
                                 "response_length": msg.content.len(),
                             }),
                             created_at: Utc::now(),
-        metadata: serde_json::json!({}),
+                            metadata: serde_json::json!({}),
                         })
                         .await;
                     crate::hook_dispatch::dispatch_hooks(

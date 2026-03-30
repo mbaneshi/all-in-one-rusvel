@@ -12,10 +12,7 @@ use rusvel_core::domain::{
 use crate::TuiTerminalPane;
 use crate::tabs::{PANEL_EVENTS, PANEL_GOALS, PANEL_PIPELINE, PANEL_TASKS};
 
-pub fn header_widget<'a>(
-    session_name: &'a str,
-    latest_brief: Option<&'a str>,
-) -> Paragraph<'a> {
+pub fn header_widget<'a>(session_name: &'a str, latest_brief: Option<&'a str>) -> Paragraph<'a> {
     let mut lines = vec![Line::from(vec![
         Span::styled(
             " RUSVEL ",
@@ -37,12 +34,11 @@ pub fn header_widget<'a>(
             Span::raw(t),
         ]));
     }
-    Paragraph::new(lines)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Cyan)),
-        )
+    Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan)),
+    )
 }
 
 pub fn tasks_widget(tasks: &[Task]) -> List<'_> {
@@ -112,11 +108,11 @@ pub fn goals_widget(goals: &[Goal]) -> Table<'_> {
                 .fg(Color::Cyan),
         ),
     )
-        .block(
-            Block::default()
-                .title(format!(" {PANEL_GOALS} "))
-                .borders(Borders::ALL),
-        )
+    .block(
+        Block::default()
+            .title(format!(" {PANEL_GOALS} "))
+            .borders(Borders::ALL),
+    )
 }
 
 pub fn pipeline_widget(stats: &HashMap<String, usize>) -> BarChart<'_> {

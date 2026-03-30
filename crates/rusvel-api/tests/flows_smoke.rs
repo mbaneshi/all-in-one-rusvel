@@ -24,8 +24,7 @@ async fn list_flows_empty() {
 #[tokio::test]
 async fn list_node_types() {
     let mut h = build_harness().await;
-    let (status, body) =
-        json_request(&mut h.router, "GET", "/api/flows/node-types", None).await;
+    let (status, body) = json_request(&mut h.router, "GET", "/api/flows/node-types", None).await;
     assert_eq!(status, StatusCode::OK);
     let types: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
     assert!(!types.is_empty());
@@ -64,8 +63,7 @@ async fn create_get_flow_roundtrip() {
     let created: serde_json::Value = serde_json::from_slice(&body).unwrap();
     let id = created["id"].as_str().unwrap();
 
-    let (st2, b2) =
-        json_request(&mut h.router, "GET", &format!("/api/flows/{id}"), None).await;
+    let (st2, b2) = json_request(&mut h.router, "GET", &format!("/api/flows/{id}"), None).await;
     assert_eq!(st2, StatusCode::OK);
     let got: serde_json::Value = serde_json::from_slice(&b2).unwrap();
     assert_eq!(got["name"], "test-flow");

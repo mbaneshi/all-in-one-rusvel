@@ -275,12 +275,7 @@ impl LlmPort for ClaudeCliProvider {
                                         .unwrap_or("")
                                         .to_string();
 
-                                    // Determine finish reason from content
-                                    let finish_reason = if parsed.pointer("/result").is_some() {
-                                        FinishReason::Stop
-                                    } else {
-                                        FinishReason::Stop
-                                    };
+                                    let finish_reason = FinishReason::Stop;
 
                                     let _ = tx
                                         .send(LlmStreamEvent::Done(LlmResponse {

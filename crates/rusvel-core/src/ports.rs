@@ -21,7 +21,7 @@
 //! | [`EmbeddingPort`] | Text → dense vector embeddings |
 //! | [`VectorStorePort`] | Similarity search over embeddings |
 //! | [`ChannelPort`] | Outbound messaging: Telegram, Discord, … |
-//! | [`BrowserPort`] | Chrome DevTools Protocol: tabs, observe, evaluate, navigate |
+//! | [`BrowserPort`] | Chrome `DevTools` Protocol: tabs, observe, evaluate, navigate |
 //!
 //! **Not here (ADR-006):** `HarvestPort` and `PublishPort` are
 //! engine-internal traits, not cross-cutting concerns.

@@ -52,7 +52,8 @@ fn navigate_url_allowed(url: &str) -> bool {
     let Some(host) = navigate_url_host(url) else {
         return false;
     };
-    list.iter().any(|allowed| allowed == &host || host.ends_with(&format!(".{allowed}")))
+    list.iter()
+        .any(|allowed| allowed == &host || host.ends_with(&format!(".{allowed}")))
 }
 
 #[derive(Deserialize)]
