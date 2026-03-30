@@ -42,7 +42,7 @@ use rusvel_core::ports::{AgentPort, LlmPort, MemoryPort, ToolPort};
 pub type HookHandler = Arc<dyn Fn(&str, &serde_json::Value) -> HookDecision + Send + Sync>;
 
 /// Default maximum iterations in the agent loop.
-const DEFAULT_MAX_ITERATIONS: u32 = 50;
+const DEFAULT_MAX_ITERATIONS: u32 = 24;
 
 fn agent_permission_blocks_tool(
     config: &AgentConfig,
@@ -73,10 +73,33 @@ fn agent_permission_blocks_tool(
 }
 
 /// When conversation turns exceed this count, older turns are summarized.
-const COMPACT_THRESHOLD: usize = 30;
+const COMPACT_THRESHOLD: usize = 42;
 
 /// After compaction, this many trailing [`LlmMessage`] entries are kept verbatim (plus optional system).
 const COMPACT_KEEP_RECENT: usize = 10;
+
+fn tool_allowed_by_dept_config(name: &str, allow: &[String]) -> bool {
+    if allow.is_empty() {
+        return true;
+    }
+    if name == "tool_search" {
+        return true;
+    }
+    allow.iter().any(|pat| {
+        if let Some(prefix) = pat.strip_suffix('*') {
+            name.starts_with(prefix)
+        } else {
+            name == pat.as_str()
+        }
+    })
+}
+
+fn filter_tool_defs_for_config(defs: &mut Vec<ToolDefinition>, allow: &[String]) {
+    if allow.is_empty() {
+        return;
+    }
+    defs.retain(|t| tool_allowed_by_dept_config(&t.name, allow));
+}
 
 /// Events emitted during a streaming agent run.
 #[derive(Debug, Clone)]
@@ -680,6 +703,7 @@ async fn run_streaming_loop(
     // Searchable tools are discovered via `tool_search` and added dynamically.
     let mut tool_defs: Vec<ToolDefinition> =
         tools.list().into_iter().filter(|t| !t.searchable).collect();
+    filter_tool_defs_for_config(&mut tool_defs, &config.tools);
     let mut consecutive_failures: u32 = 0;
 
     let max_iter = config.max_iterations.unwrap_or(DEFAULT_MAX_ITERATIONS);
@@ -802,7 +826,21 @@ async fn run_streaming_loop(
                     continue;
                 }
 
-                let tool_result = tools.call(&tool_name, effective_args).await;
+                let mut call_args = effective_args;
+                if let serde_json::Value::Object(ref mut m) = call_args {
+                    if let Some(dept) = config
+                        .metadata
+                        .get(RUSVEL_META_DEPARTMENT_ID)
+                        .and_then(|v| v.as_str())
+                    {
+                        m.insert(
+                            "__department_id".into(),
+                            serde_json::Value::String(dept.to_string()),
+                        );
+                    }
+                }
+
+                let tool_result = tools.call(&tool_name, call_args).await;
                 tool_calls += 1;
 
                 if let Ok(ref r) = tool_result {
@@ -824,7 +862,9 @@ async fn run_streaming_loop(
                                     .unwrap_or("");
                                 let discovered = tools.search(query, arr.len().max(10));
                                 for tool in discovered {
-                                    if !tool_defs.iter().any(|t| t.name == tool.name) {
+                                    if tool_allowed_by_dept_config(&tool.name, &config.tools)
+                                        && !tool_defs.iter().any(|t| t.name == tool.name)
+                                    {
                                         debug!(%run_id, tool_name = %tool.name, "discovered tool via search");
                                         tool_defs.push(tool);
                                     }
@@ -963,6 +1003,7 @@ impl AgentPort for AgentRuntime {
             .into_iter()
             .filter(|t| !t.searchable)
             .collect();
+        filter_tool_defs_for_config(&mut tool_defs, &config.tools);
         let mut consecutive_failures: u32 = 0;
 
         // ── Agent loop ───────────────────────────────────────────────
@@ -1070,7 +1111,20 @@ impl AgentPort for AgentRuntime {
                     }
 
                     // Execute the tool.
-                    let tool_result = self.tools.call(&tool_name, effective_args).await;
+                    let mut call_args = effective_args;
+                    if let serde_json::Value::Object(ref mut m) = call_args {
+                        if let Some(dept) = config
+                            .metadata
+                            .get(RUSVEL_META_DEPARTMENT_ID)
+                            .and_then(|v| v.as_str())
+                        {
+                            m.insert(
+                                "__department_id".into(),
+                                serde_json::Value::String(dept.to_string()),
+                            );
+                        }
+                    }
+                    let tool_result = self.tools.call(&tool_name, call_args).await;
                     tool_calls += 1;
 
                     // Run post-tool-use hooks (informational).
@@ -1087,7 +1141,9 @@ impl AgentPort for AgentRuntime {
                                         .unwrap_or("");
                                     let discovered = self.tools.search(query, arr.len().max(10));
                                     for tool in discovered {
-                                        if !tool_defs.iter().any(|t| t.name == tool.name) {
+                                        if tool_allowed_by_dept_config(&tool.name, &config.tools)
+                                            && !tool_defs.iter().any(|t| t.name == tool.name)
+                                        {
                                             debug!(%run_id, tool_name = %tool.name, "discovered tool via search");
                                             tool_defs.push(tool);
                                         }

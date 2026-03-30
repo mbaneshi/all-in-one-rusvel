@@ -254,9 +254,14 @@ impl ToolPort for ToolRegistry {
             }
             ToolPermissionMode::Supervised => {
                 return Ok(ToolResult {
-                    success: true,
-                    output: rusvel_core::domain::Content::text("AWAITING_APPROVAL"),
-                    metadata: serde_json::json!({"permission": "supervised"}),
+                    success: false,
+                    output: rusvel_core::domain::Content::text(
+                        "Tool requires approval (supervised mode); not executed.",
+                    ),
+                    metadata: serde_json::json!({
+                        "permission": "supervised",
+                        "approval_required": true
+                    }),
                 });
             }
             ToolPermissionMode::Auto => {}
@@ -338,6 +343,9 @@ impl ScopedToolRegistry {
     }
 
     fn is_allowed(&self, name: &str) -> bool {
+        if self.allowed.is_empty() {
+            return true;
+        }
         self.allowed.iter().any(|a| {
             if a.ends_with('*') {
                 name.starts_with(&a[..a.len() - 1])
@@ -559,5 +567,10 @@ mod tests {
         assert!(scoped.schema("echo").is_some());
         // schema blocked
         assert!(scoped.schema("other_tool").is_none());
+
+        let scoped_all = ScopedToolRegistry::new(registry.clone() as Arc<dyn ToolPort>, vec![]);
+        assert_eq!(scoped_all.list().len(), 3);
+        let r = scoped_all.call("other_tool", json!({"message": "x"})).await.unwrap();
+        assert!(r.success);
     }
 }
