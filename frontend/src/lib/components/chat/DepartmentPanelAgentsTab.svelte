@@ -10,6 +10,7 @@
 		hoverBorder: string;
 		button: string;
 		buttonHover: string;
+		buttonSemi: string;
 		badge: string;
 		text300: string;
 		text400: string;
