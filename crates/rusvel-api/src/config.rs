@@ -362,30 +362,20 @@ pub async fn llm_providers_status() -> Json<LlmProvidersReport> {
 
     let anthropic_raw = std::env::var("ANTHROPIC_API_KEY").unwrap_or_default();
     let anthropic_key = !anthropic_raw.trim().is_empty();
-    let (claude_route, claude_healthy, claude_detail) = if anthropic_key {
-        (
-            "anthropic_api (ANTHROPIC_API_KEY)".into(),
-            None::<bool>,
-            Some(
-                "HTTP API — billing/credits validated on first request; no live probe here."
-                    .into(),
-            ),
-        )
-    } else {
-        let mut h = probe_cli("claude", &["--version"]).await;
-        if h != Some(true) {
-            h = probe_cli("claude", &["-h"]).await;
+
+    let mut claude_cli_ok = probe_cli("claude", &["--version"]).await;
+    if claude_cli_ok != Some(true) {
+        claude_cli_ok = probe_cli("claude", &["-h"]).await;
+    }
+    let claude_cli_detail = match claude_cli_ok {
+        Some(true) => Some(
+            "At boot, if ANTHROPIC_API_KEY is unset, `claude/…` is served via `claude -p` (terminal — same idea as `cursor/…` via Cursor CLI). Subscription / Claude Code Max."
+                .into(),
+        ),
+        Some(false) => {
+            Some("`claude` exited non-zero — check PATH and `claude --version`.".into())
         }
-        let detail = match h {
-            Some(true) => Some("`claude` CLI responds (subscription / Max).".into()),
-            Some(false) => Some("`claude` exited non-zero — check PATH and `claude --version`.".into()),
-            None => Some("Could not run `claude` within 4s (not installed or PATH).".into()),
-        };
-        (
-            "claude_cli (no ANTHROPIC_API_KEY)".into(),
-            h,
-            detail,
-        )
+        None => Some("Could not run `claude` within 4s (not installed or PATH).".into()),
     };
 
     let openai_key = std::env::var("OPENAI_API_KEY")
@@ -402,12 +392,27 @@ pub async fn llm_providers_status() -> Json<LlmProvidersReport> {
 
     let providers = vec![
         LlmProviderStatus {
-            id: "claude",
-            display_name: "Claude (Anthropic API or CLI)".into(),
+            id: "anthropic_api",
+            display_name: "Anthropic API".into(),
+            wired: anthropic_key,
+            route: if anthropic_key {
+                "ANTHROPIC_API_KEY set".into()
+            } else {
+                "ANTHROPIC_API_KEY not set".into()
+            },
+            healthy: None,
+            detail: Some(
+                "At server boot: if set, all `claude/…` traffic uses the Messages API. Billing is checked on first request; no live probe."
+                    .into(),
+            ),
+        },
+        LlmProviderStatus {
+            id: "claude_cli",
+            display_name: "Claude CLI (claude -p)".into(),
             wired: true,
-            route: claude_route,
-            healthy: claude_healthy,
-            detail: claude_detail,
+            route: "`claude` on PATH".into(),
+            healthy: claude_cli_ok,
+            detail: claude_cli_detail,
         },
         LlmProviderStatus {
             id: "cursor",

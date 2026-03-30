@@ -290,10 +290,10 @@
 						LLM providers
 					</h2>
 					<p class="mt-0.5 text-xs text-muted-foreground leading-relaxed">
-						How the server wired providers at boot + quick reachability (Ollama HTTP, CLI
-						<code class="rounded bg-muted px-0.5">--version</code>). Claude Max / subscription uses
-						<strong>CLI</strong> when <code class="rounded bg-muted px-0.5">ANTHROPIC_API_KEY</code> is
-						unset; API key prefers HTTP (billing errors show on first chat).
+						Two separate rows for Claude: <strong>Anthropic API</strong> (key) vs
+						<strong>Claude CLI</strong> (<code class="rounded bg-muted px-0.5">claude -p</code>, like
+						Cursor in the terminal). Only one backs <code class="rounded bg-muted px-0.5">claude/…</code>
+						at boot — API if the key is set, otherwise CLI. Ollama/Cursor/OpenAI are probed where cheap.
 					</p>
 				</div>
 				<button
@@ -335,7 +335,9 @@
 				<div class="mt-4 border-t border-border pt-4">
 					<p class="mb-2 text-xs font-medium text-muted-foreground">Quick model picks (then Save app defaults)</p>
 					<div class="flex flex-wrap gap-2">
-						<span class="w-full text-[10px] uppercase tracking-wide text-muted-foreground">Claude</span>
+						<span class="w-full text-[10px] uppercase tracking-wide text-muted-foreground">
+							Claude (<code class="font-mono">claude/…</code> → API or CLI per boot)
+						</span>
 						{#each ['claude/sonnet', 'claude/opus', 'claude/haiku'] as mid}
 							<button
 								type="button"
