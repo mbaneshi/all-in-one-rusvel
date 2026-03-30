@@ -36,6 +36,15 @@ The job worker is a **single sequential loop** with a **5s idle poll**; long job
 
 **`rusvel-api`** uses **`spawn_blocking`** only in **`db_routes.rs`** (schema introspection, table rows, SQL runner). Errors map to HTTP status via `map_err`; **`JoinError`** from a panicked blocking task surfaces as **500**. The **`rusvel-db`** `JobStore` path also uses **`spawn_blocking`** heavily—API traffic and the job worker **share** the same DB mutex, so heavy SQL UI work can **lengthen job dequeue latency** (not starvation of the async runtime, but **queue latency**).
 
+### Follow-up status (post–audit-05 reliability slice)
+
+- **F01:** `JobStore::dequeue` uses `BEGIN IMMEDIATE` and conditional `UPDATE` (claim only if still `Queued`); cross-process safe for SQLite locking semantics.
+- **F02:** `Database::sweep_stale_running_jobs` — **startup** (`RUSVEL_JOB_STALE_RUNNING_SECS`, default 3600) and **periodic** (`RUSVEL_JOB_STALE_SWEEP_INTERVAL_SECS`, default 900; `0` disables periodic only).
+- **F03:** `Database::fail` implements retries; **`rusvel-jobs::JobQueue::fail`** aligned for in-memory / tests.
+- **F04:** `ContentPublish` invalid payload and unknown kinds surface as worker `Err` → **`fail()`** (not `Succeeded` with error JSON).
+- **F05:** Post-dequeue **`AwaitingApproval`** skip removed (dead branch).
+- **F06 (partial):** Worker structured logs: **`duration_ms`**, optional **`schedule_id`** / **`event_kind`** from payload; no queue-depth **`MetricStore`** yet.
+
 ---
 
 ### Findings
@@ -47,7 +56,7 @@ The job worker is a **single sequential loop** with a **5s idle poll**; long job
 | Medium | Retries unused | `Job` has `retries`, `max_retries`; `JobPort::fail` only sets `Failed`. | Fields appear in API (`JobListItem`) but convey no real retry behavior. |
 | Medium | Misleading success for bad payload | `main.rs` `ContentPublish`: invalid `content_id`/platform → `Ok(Some(JobResult { output: {"error": …} }))` → `complete`. | Status `Succeeded` while output describes failure; clients must parse payload, not status alone. |
 | Medium | Unknown kinds “succeed” | `main.rs` default arm: `Ok(Some(JobResult { "action": "unknown", … }))` + `complete`. | Misconfiguration or new enum variant on wire may look like success. |
-| Low | Dead branch in worker | `main.rs`: `if job.status == JobStatus::AwaitingApproval` after `dequeue`. | Dequeue transitions `Queued` → `Running`; this path does not run for normal DB-backed flow. |
+| Low | Dead branch in worker | `main.rs`: `if job.status == JobStatus::AwaitingApproval` after `dequeue`. | **Resolved:** branch removed (follow-up); dequeue always returns `Running` for claimed work. |
 | Low | `spawn_blocking` pool + shared DB lock | `db_routes.rs` + `JobStore` both `spawn_blocking` on same `Database`. | Under load, many concurrent DB routes extend time-to-dequeue for jobs. |
 | Low | `rusvel-jobs::spawn_worker` swallows terminal errors | `spawn_worker`: `let _ = queue.complete/fail`. | Test/helper worker only; production uses `rusvel-app` loop (logs failures). |
 | Info | Single worker, fixed poll | `main.rs`: one `tokio::spawn` loop, `sleep(5s)` between iterations when idle. | Simple and predictable; high latency for empty queue; no priority or fairness across kinds. |
@@ -57,16 +66,16 @@ The job worker is a **single sequential loop** with a **5s idle poll**; long job
 
 ### Fix proposals
 
-| ID | Proposal | Effort | Owner / area |
-|----|----------|--------|----------------|
-| F01 | Wrap dequeue in **`BEGIN IMMEDIATE`**; use single **`UPDATE … WHERE status='Queued' … RETURNING`** (or equivalent) so claim is atomic across connections. | M | `rusvel-db` / `JobStore` |
-| F02 | Add **stale-Running** policy: `started_at` + threshold → `Failed` or re-`Queued` with `retries += 1`, plus admin/API to list stuck jobs. | M | `rusvel-db`, `JobPort`, optional `rusvel-api` |
-| F03 | Implement **`max_retries`** in `fail` (or dedicated `retry`): increment `retries`, if `< max_retries` reset to `Queued` with backoff metadata; else `Failed`. | M | `rusvel-jobs` (trait semantics), `rusvel-db`, worker |
-| F04 | Treat validation errors as **`fail()`** (or a distinct terminal status) for `ContentPublish` / unknown kinds instead of `complete` with error JSON. | S | `rusvel-app` worker |
-| F05 | Remove or repurpose **AwaitingApproval** check** post-dequeue; document that approval-only dequeue is unnecessary with current `JobPort`. | S | `rusvel-app` |
-| F06 | **Observability:** structured fields for `duration_ms`, `queue_depth` (count by status), `running_age_seconds`; optional `MetricStore` counters/histograms. | M | `rusvel-app`, `rusvel-db` or metrics adapter |
-| F07 | **Backpressure (optional):** max queued jobs per session/kind, or reject enqueue with **429/507** when depth exceeds cap. | L | `rusvel-api` enqueue sites, `JobPort` |
-| F08 | Document or enforce **single writer** to `rusvel.db` for job processing; if multi-instance is required, ship F01 first. | S | docs / ops |
+| ID | Proposal | Effort | Owner / area | Status |
+|----|----------|--------|----------------|--------|
+| F01 | Wrap dequeue in **`BEGIN IMMEDIATE`**; conditional **`UPDATE … WHERE status='Queued'`** so claim is atomic across connections. | M | `rusvel-db` / `JobStore` | Done |
+| F02 | **Stale-Running** sweep: `started_at` + threshold → `Failed` (startup + periodic env); optional future: re-`Queued` / admin list API. | M | `rusvel-db`, `rusvel-app` worker | Partial |
+| F03 | **`max_retries`** in **`fail`**: increment `retries`, re-`Queued` if `< max_retries`; **`JobQueue`** matches **`Database`**. | M | `rusvel-db`, `rusvel-jobs` | Done |
+| F04 | Validation → **`fail()`** for `ContentPublish` / unknown kinds (not `Succeeded` + error JSON). | S | `rusvel-app` worker | Done |
+| F05 | Remove post-dequeue **AwaitingApproval** check (dead). | S | `rusvel-app` | Done |
+| F06 | **Observability:** `duration_ms`, cron payload fields in worker logs; **`queue_depth` / `MetricStore`** still open. | M | `rusvel-app`, metrics | Partial |
+| F07 | **Backpressure:** max queue depth or **429/507** on enqueue. | L | `rusvel-api`, `JobPort` | Open |
+| F08 | Document **single writer** / multi-instance ops (**F01** reduces duplicate-claim risk). | S | docs / ops | Open |
 
 ---
 

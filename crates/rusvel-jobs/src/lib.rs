@@ -151,9 +151,20 @@ impl JobPort for JobQueue {
             });
         }
 
-        job.status = JobStatus::Failed;
-        job.completed_at = Some(Utc::now());
-        job.error = Some(error);
+        if job.retries < job.max_retries {
+            job.retries += 1;
+            job.status = JobStatus::Queued;
+            job.started_at = None;
+            job.completed_at = None;
+            job.error = Some(format!(
+                "retry {}/{}: {}",
+                job.retries, job.max_retries, error
+            ));
+        } else {
+            job.status = JobStatus::Failed;
+            job.completed_at = Some(Utc::now());
+            job.error = Some(error);
+        }
         Ok(())
     }
 
@@ -356,9 +367,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn fail_marks_failed() {
+    async fn fail_marks_failed_when_max_retries_zero() {
         let q = JobQueue::new();
-        let id = q.enqueue(test_new_job()).await.unwrap();
+        let id = q
+            .enqueue(NewJob {
+                max_retries: 0,
+                ..test_new_job()
+            })
+            .await
+            .unwrap();
         q.dequeue(&[]).await.unwrap();
 
         q.fail(&id, "boom".into()).await.unwrap();
@@ -372,6 +389,45 @@ mod tests {
             .unwrap();
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].error.as_deref(), Some("boom"));
+    }
+
+    #[tokio::test]
+    async fn fail_requeues_until_max_retries_exceeded() {
+        let q = JobQueue::new();
+        let id = q
+            .enqueue(NewJob {
+                max_retries: 2,
+                ..test_new_job()
+            })
+            .await
+            .unwrap();
+
+        for expected_retry in 1..=2 {
+            q.dequeue(&[]).await.unwrap();
+            q.fail(&id, "transient".into()).await.unwrap();
+            let j = q
+                .list(JobFilter {
+                    statuses: vec![JobStatus::Queued],
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+            assert_eq!(j.len(), 1);
+            assert_eq!(j[0].retries, expected_retry);
+            assert!(j[0].error.as_deref().unwrap().contains("retry"));
+        }
+
+        q.dequeue(&[]).await.unwrap();
+        q.fail(&id, "final".into()).await.unwrap();
+        let failed = q
+            .list(JobFilter {
+                statuses: vec![JobStatus::Failed],
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed[0].error.as_deref(), Some("final"));
     }
 
     #[tokio::test]

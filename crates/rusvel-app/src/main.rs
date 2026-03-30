@@ -19,7 +19,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -1241,32 +1241,65 @@ async fn main() -> Result<()> {
                 _ => {}
             }
         }
+        let sweep_interval_secs: u64 = std::env::var("RUSVEL_JOB_STALE_SWEEP_INTERVAL_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(900);
+        let mut last_periodic_sweep = Instant::now();
         loop {
+            if sweep_interval_secs > 0
+                && stale_secs > 0
+                && last_periodic_sweep.elapsed() >= Duration::from_secs(sweep_interval_secs)
+            {
+                last_periodic_sweep = Instant::now();
+                let dbc = db_for_job_sweep.clone();
+                let ss = stale_secs;
+                match tokio::task::spawn_blocking(move || {
+                    dbc.sweep_stale_running_jobs(Duration::from_secs(ss))
+                })
+                .await
+                {
+                    Ok(Ok(n)) if n > 0 => {
+                        tracing::warn!(
+                            count = n,
+                            "periodic stale Running job sweep (RUSVEL_JOB_STALE_SWEEP_INTERVAL_SECS={sweep_interval_secs})"
+                        );
+                    }
+                    Ok(Err(e)) => tracing::error!(error = %e, "periodic stale job sweep failed"),
+                    Err(e) => tracing::error!(error = %e, "periodic stale job sweep task failed"),
+                    _ => {}
+                }
+            }
             match job_port.dequeue(&[]).await {
                 Ok(Some(job)) => {
-                    // Skip jobs awaiting human approval (ADR-008)
-                    if job.status == JobStatus::AwaitingApproval {
-                        tracing::debug!(job_id = %job.id, "Skipping job awaiting approval");
-                        tokio::time::sleep(Duration::from_secs(5)).await;
-                        continue;
-                    }
-
                     let job_id = job.id;
+                    let job_kind = job.kind.clone();
                     let http_request_id = job
                         .metadata
                         .get("http_request_id")
                         .and_then(|v| v.as_str());
+                    let schedule_id = job
+                        .payload
+                        .get("schedule_id")
+                        .and_then(|v| v.as_str());
+                    let event_kind = job
+                        .payload
+                        .get("event_kind")
+                        .and_then(|v| v.as_str());
+                    let job_start = Instant::now();
                     tracing::info!(
                         job_id = %job_id,
-                        kind = ?job.kind,
+                        kind = ?job_kind,
                         http_request_id = http_request_id,
+                        schedule_id = schedule_id,
+                        event_kind = event_kind,
                         "Processing job"
                     );
 
                     let job_finish: std::result::Result<
                         Option<JobResult>,
                         rusvel_core::error::RusvelError,
-                    > = match job.kind {
+                    > = match job_kind {
                         JobKind::CodeAnalyze => {
                             let path_str = job
                                 .payload
@@ -1741,22 +1774,23 @@ async fn main() -> Result<()> {
                         _ => {
                             tracing::warn!(
                                 job_id = %job_id,
-                                kind = ?job.kind,
+                                kind = ?job_kind,
                                 http_request_id = http_request_id,
                                 "Unknown job kind"
                             );
                             Err(rusvel_core::error::RusvelError::Validation(format!(
                                 "unknown job kind: {:?}",
-                                job.kind
+                                job_kind
                             )))
                         }
                     };
 
+                    let duration_ms = job_start.elapsed().as_millis() as u64;
                     match job_finish {
                         Ok(Some(job_result)) => {
                             if let Some(ref term) = terminal_for_jobs {
                                 let sid = job.session_id;
-                                let kind_str = format!("{:?}", job.kind);
+                                let kind_str = format!("{:?}", job_kind);
                                 let line = format!(
                                     "job {} done ({})",
                                     job_id,
@@ -1787,14 +1821,66 @@ async fn main() -> Result<()> {
                                     let _ = term.inject_pane_output(&pid, msg.as_bytes()).await;
                                 }
                             }
-                            if let Err(e) = job_port.complete(&job_id, job_result).await {
-                                tracing::error!(job_id = %job_id, error = %e, "Failed to mark job complete");
+                            match job_port.complete(&job_id, job_result).await {
+                                Ok(()) => {
+                                    tracing::info!(
+                                        job_id = %job_id,
+                                        kind = ?job_kind,
+                                        http_request_id = http_request_id,
+                                        duration_ms,
+                                        schedule_id = schedule_id,
+                                        event_kind = event_kind,
+                                        "Job completed"
+                                    );
+                                }
+                                Err(e) => {
+                                    tracing::error!(
+                                        job_id = %job_id,
+                                        kind = ?job_kind,
+                                        http_request_id = http_request_id,
+                                        duration_ms,
+                                        schedule_id = schedule_id,
+                                        event_kind = event_kind,
+                                        error = %e,
+                                        "Failed to mark job complete"
+                                    );
+                                }
                             }
                         }
-                        Ok(None) => {}
+                        Ok(None) => {
+                            tracing::info!(
+                                job_id = %job_id,
+                                kind = ?job_kind,
+                                http_request_id = http_request_id,
+                                duration_ms,
+                                schedule_id = schedule_id,
+                                event_kind = event_kind,
+                                "Job finished without terminal completion (e.g. awaiting approval)"
+                            );
+                        }
                         Err(error) => {
                             if let Err(e) = job_port.fail(&job_id, error.to_string()).await {
-                                tracing::error!(job_id = %job_id, error = %e, "Failed to mark job failed");
+                                tracing::error!(
+                                    job_id = %job_id,
+                                    kind = ?job_kind,
+                                    http_request_id = http_request_id,
+                                    duration_ms,
+                                    schedule_id = schedule_id,
+                                    event_kind = event_kind,
+                                    error = %e,
+                                    "Failed to mark job failed"
+                                );
+                            } else {
+                                tracing::warn!(
+                                    job_id = %job_id,
+                                    kind = ?job_kind,
+                                    http_request_id = http_request_id,
+                                    duration_ms,
+                                    schedule_id = schedule_id,
+                                    event_kind = event_kind,
+                                    error = %error,
+                                    "Job failed"
+                                );
                             }
                         }
                     }

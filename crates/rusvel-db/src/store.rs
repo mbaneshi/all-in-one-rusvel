@@ -2360,6 +2360,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn job_sweep_stale_running_marks_failed() {
+        use chrono::Duration as ChronoDuration;
+        let db = test_db();
+        let started_old = Utc::now() - ChronoDuration::hours(2);
+        let job = Job {
+            id: JobId::new(),
+            session_id: SessionId::new(),
+            kind: JobKind::AgentRun,
+            payload: serde_json::json!({}),
+            status: JobStatus::Running,
+            scheduled_at: None,
+            started_at: Some(started_old),
+            completed_at: None,
+            retries: 0,
+            max_retries: 3,
+            error: None,
+            metadata: serde_json::json!({}),
+        };
+        JobStore::enqueue(&db, &job).await.unwrap();
+        let n = db
+            .sweep_stale_running_jobs(std::time::Duration::from_secs(3600))
+            .unwrap();
+        assert_eq!(n, 1);
+        let got = JobStore::get(&db, &job.id).await.unwrap().unwrap();
+        assert_eq!(got.status, JobStatus::Failed);
+        assert!(
+            got.error
+                .as_deref()
+                .unwrap()
+                .contains("stale Running job"),
+            "unexpected error: {:?}",
+            got.error
+        );
+    }
+
+    #[tokio::test]
     async fn job_update_and_list() {
         let db = test_db();
         let sid = SessionId::new();
