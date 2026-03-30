@@ -24,6 +24,12 @@ If **both** token env vars are unset, `/api/*` accepts requests without `Authori
 
 Use this on shared or production-adjacent hosts so the DB browser cannot mutate data even with an admin bearer token.
 
+## Frontend (Vite / embedded SPA)
+
+| Variable | Purpose |
+|----------|---------|
+| `VITE_RUSVEL_API_TOKEN` | Sent as `Authorization: Bearer` on all `fetch` calls from [`frontend/src/lib/api.ts`](../frontend/src/lib/api.ts). **Embedded in the built JS bundle** — prefer the **read-only** server token when possible; do not commit real secrets. |
+
 ## MCP HTTP
 
 | Variable | Purpose |

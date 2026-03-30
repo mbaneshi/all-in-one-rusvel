@@ -13,6 +13,19 @@ export {
 	isDeptShellTabVisible
 } from './departmentManifest';
 
+/** Merged into all API fetches when set (dev / custom builds). Token is embedded in static assets — use read-only token when possible. */
+function withAuthHeaders(extra?: HeadersInit): Headers {
+	const h = new Headers(extra);
+	if (!h.has('Content-Type')) {
+		h.set('Content-Type', 'application/json');
+	}
+	const token = import.meta.env.VITE_RUSVEL_API_TOKEN as string | undefined;
+	if (token?.trim()) {
+		h.set('Authorization', `Bearer ${token.trim()}`);
+	}
+	return h;
+}
+
 export interface SessionSummary {
 	id: string;
 	name: string;
@@ -110,9 +123,10 @@ async function parseSSE(
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+	const { headers: ho, ...rest } = options ?? {};
 	const res = await fetch(`${BASE}${path}`, {
-		headers: { 'Content-Type': 'application/json' },
-		...options
+		...rest,
+		headers: withAuthHeaders(ho)
 	});
 	if (!res.ok) {
 		const text = await res.text();
@@ -174,7 +188,8 @@ export interface ExecutiveBriefRow {
 
 export async function getBriefLatest(sessionId: string): Promise<ExecutiveBriefRow | null> {
 	const res = await fetch(
-		`${BASE}/api/brief/latest?session_id=${encodeURIComponent(sessionId)}`
+		`${BASE}/api/brief/latest?session_id=${encodeURIComponent(sessionId)}`,
+		{ headers: withAuthHeaders() }
 	);
 	if (res.status === 404) return null;
 	if (!res.ok) {
@@ -329,7 +344,7 @@ export async function streamDeptChat(
 ): Promise<void> {
 	const res = await fetch(`${BASE}/api/dept/${dept}/chat`, {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
+		headers: withAuthHeaders(),
 		body: JSON.stringify({
 			message,
 			conversation_id: conversationId,
@@ -403,7 +418,7 @@ export async function createAgent(agent: {
 }
 
 export async function deleteAgent(id: string): Promise<void> {
-	await fetch(`${BASE}/api/agents/${id}`, { method: 'DELETE' });
+	await fetch(`${BASE}/api/agents/${id}`, { method: 'DELETE', headers: withAuthHeaders() });
 }
 
 // ── Skills CRUD ──────────────────────────────────────────────
@@ -425,7 +440,7 @@ export async function createSkill(skill: Partial<Skill>): Promise<Skill> {
 }
 
 export async function deleteSkill(id: string): Promise<void> {
-	await fetch(`${BASE}/api/skills/${id}`, { method: 'DELETE' });
+	await fetch(`${BASE}/api/skills/${id}`, { method: 'DELETE', headers: withAuthHeaders() });
 }
 
 // ── Rules CRUD ───────────────────────────────────────────────
@@ -451,7 +466,7 @@ export async function updateRule(id: string, rule: Partial<Rule>): Promise<Rule>
 }
 
 export async function deleteRule(id: string): Promise<void> {
-	await fetch(`${BASE}/api/rules/${id}`, { method: 'DELETE' });
+	await fetch(`${BASE}/api/rules/${id}`, { method: 'DELETE', headers: withAuthHeaders() });
 }
 
 // ── MCP Servers CRUD ─────────────────────────────────────────
@@ -478,7 +493,7 @@ export async function createMcpServer(server: Partial<McpServer>): Promise<McpSe
 }
 
 export async function deleteMcpServer(id: string): Promise<void> {
-	await fetch(`${BASE}/api/mcp-servers/${id}`, { method: 'DELETE' });
+	await fetch(`${BASE}/api/mcp-servers/${id}`, { method: 'DELETE', headers: withAuthHeaders() });
 }
 
 // ── Hooks CRUD ───────────────────────────────────────────────
@@ -507,7 +522,7 @@ export async function updateHook(id: string, hook: Partial<Hook>): Promise<Hook>
 }
 
 export async function deleteHook(id: string): Promise<void> {
-	await fetch(`${BASE}/api/hooks/${id}`, { method: 'DELETE' });
+	await fetch(`${BASE}/api/hooks/${id}`, { method: 'DELETE', headers: withAuthHeaders() });
 }
 
 export async function getHookEvents(): Promise<string[]> {
@@ -563,7 +578,7 @@ export async function updateWorkflow(id: string, workflow: Workflow): Promise<Wo
 }
 
 export async function deleteWorkflow(id: string): Promise<void> {
-	await fetch(`${BASE}/api/workflows/${id}`, { method: 'DELETE' });
+	await fetch(`${BASE}/api/workflows/${id}`, { method: 'DELETE', headers: withAuthHeaders() });
 }
 
 export async function runWorkflow(
@@ -601,7 +616,7 @@ export async function getPendingApprovals(): Promise<Job[]> {
 async function postApprovalAction(path: string, body?: Record<string, unknown>): Promise<void> {
 	const res = await fetch(`${BASE}${path}`, {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
+		headers: withAuthHeaders(),
 		body: body !== undefined ? JSON.stringify(body) : undefined
 	});
 	if (!res.ok) {
@@ -656,7 +671,7 @@ export async function streamCapability(
 ): Promise<void> {
 	const res = await fetch(`${BASE}/api/capability/build`, {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
+		headers: withAuthHeaders(),
 		body: JSON.stringify({ description, engine })
 	});
 	await parseSSE(
@@ -681,7 +696,7 @@ export async function streamHelp(
 ): Promise<void> {
 	const res = await fetch(`${BASE}/api/help`, {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
+		headers: withAuthHeaders(),
 		body: JSON.stringify({ question, context })
 	});
 	await parseSSE(
@@ -709,7 +724,7 @@ export async function streamChat(
 ): Promise<void> {
 	const res = await fetch(`${BASE}/api/chat`, {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
+		headers: withAuthHeaders(),
 		body: JSON.stringify({
 			message,
 			conversation_id: conversationId,
@@ -755,7 +770,7 @@ export async function streamChat(
 // ── Department Registry ──────────────────────────────────────
 
 export async function getDepartments(): Promise<DepartmentDef[]> {
-	const res = await fetch(`${BASE}/api/departments`);
+	const res = await fetch(`${BASE}/api/departments`, { headers: withAuthHeaders() });
 	const raw: unknown = await res.json();
 	return normalizeDepartmentList(raw);
 }
@@ -805,13 +820,14 @@ export interface DbSqlExecuteResponse {
 	duration_ms: number;
 }
 export async function getDbTables(): Promise<DbTableSummary[]> {
-	const res = await fetch(`${BASE}/api/db/tables`);
+	const res = await fetch(`${BASE}/api/db/tables`, { headers: withAuthHeaders() });
 	if (!res.ok) throw new Error(await res.text());
 	return res.json();
 }
 export async function getDbTableSchema(table: string): Promise<DbTableInfo> {
 	const res = await fetch(
-		`${BASE}/api/db/tables/${encodeURIComponent(table)}/schema`
+		`${BASE}/api/db/tables/${encodeURIComponent(table)}/schema`,
+		{ headers: withAuthHeaders() }
 	);
 	if (!res.ok) throw new Error(await res.text());
 	return res.json();
@@ -826,7 +842,7 @@ export async function getDbTableRows(
 	if (params?.order) sp.set('order', params.order);
 	const q = sp.toString();
 	const url = `${BASE}/api/db/tables/${encodeURIComponent(table)}/rows${q ? `?${q}` : ''}`;
-	const res = await fetch(url);
+	const res = await fetch(url, { headers: withAuthHeaders() });
 	if (!res.ok) throw new Error(await res.text());
 	return res.json();
 }
@@ -1307,7 +1323,7 @@ export async function createArtifact(body: {
 export async function deleteArtifact(id: string): Promise<void> {
 	const res = await fetch(`${BASE}/api/artifacts/${encodeURIComponent(id)}`, {
 		method: 'DELETE',
-		headers: { 'Content-Type': 'application/json' }
+		headers: withAuthHeaders()
 	});
 	if (!res.ok && res.status !== 204) {
 		const text = await res.text();
@@ -1333,7 +1349,7 @@ export async function setGitHubPat(token: string): Promise<GitHubConnectorStatus
 export async function clearGitHubPat(): Promise<void> {
 	const res = await fetch(`${BASE}/api/connectors/github/pat`, {
 		method: 'DELETE',
-		headers: { 'Content-Type': 'application/json' }
+		headers: withAuthHeaders()
 	});
 	if (!res.ok && res.status !== 204) {
 		const text = await res.text();
@@ -1360,14 +1376,14 @@ export async function getContentScheduled(
 }
 
 export async function getProfile(): Promise<unknown> {
-	const res = await fetch(`${BASE}/api/profile`);
+	const res = await fetch(`${BASE}/api/profile`, { headers: withAuthHeaders() });
 	return res.json();
 }
 
 export async function updateProfile(profile: unknown): Promise<unknown> {
 	const res = await fetch(`${BASE}/api/profile`, {
 		method: 'PUT',
-		headers: { 'Content-Type': 'application/json' },
+		headers: withAuthHeaders(),
 		body: JSON.stringify(profile)
 	});
 	return res.json();
@@ -1409,7 +1425,7 @@ export async function getKnowledge(): Promise<KnowledgeEntry[]> {
 }
 
 export async function deleteKnowledge(id: string): Promise<void> {
-	await fetch(`${BASE}/api/knowledge/${id}`, { method: 'DELETE' });
+	await fetch(`${BASE}/api/knowledge/${id}`, { method: 'DELETE', headers: withAuthHeaders() });
 }
 
 export async function searchKnowledge(
@@ -1487,7 +1503,10 @@ export async function createFlow(flow: Partial<FlowDef>): Promise<{ id: string }
 }
 
 export async function deleteFlow(id: string): Promise<void> {
-	const res = await fetch(`${BASE}/api/flows/${id}`, { method: 'DELETE' });
+	const res = await fetch(`${BASE}/api/flows/${id}`, {
+		method: 'DELETE',
+		headers: withAuthHeaders()
+	});
 	if (!res.ok) {
 		const text = await res.text();
 		throw new Error(`API error ${res.status}: ${text}`);
@@ -1593,7 +1612,7 @@ export interface AnalyticsData {
 }
 
 export async function getAnalytics(): Promise<AnalyticsData> {
-	const res = await fetch(`${BASE}/api/analytics`);
+	const res = await fetch(`${BASE}/api/analytics`, { headers: withAuthHeaders() });
 	if (!res.ok) throw new Error('Failed to load analytics');
 	return res.json();
 }

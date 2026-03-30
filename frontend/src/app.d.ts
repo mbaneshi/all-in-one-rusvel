@@ -10,4 +10,9 @@ declare global {
 	}
 }
 
+interface ImportMetaEnv {
+	/** Optional bearer for API when `RUSVEL_API_TOKEN` is set on the server (dev / static build). */
+	readonly VITE_RUSVEL_API_TOKEN?: string;
+}
+
 export {};
