@@ -7,6 +7,7 @@
 		borderLight: string;
 		bgSubtle: string;
 		hoverBgSubtle: string;
+		hoverBg: string;
 		hoverBorder: string;
 		button: string;
 		buttonHover: string;
