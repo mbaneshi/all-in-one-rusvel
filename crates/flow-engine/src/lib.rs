@@ -396,6 +396,24 @@ impl FlowEngine {
             .collect();
         Ok(executions)
     }
+
+    /// All persisted executions, newest [`FlowExecution::started_at`] first (single store scan).
+    pub async fn list_recent_executions(&self, limit: usize) -> Result<Vec<FlowExecution>> {
+        const MAX: usize = 200;
+        let cap = limit.clamp(1, MAX);
+        let values = self
+            .storage
+            .objects()
+            .list(EXECUTION_STORE, ObjectFilter::default())
+            .await?;
+        let mut executions: Vec<FlowExecution> = values
+            .into_iter()
+            .filter_map(|v| serde_json::from_value::<FlowExecution>(v).ok())
+            .collect();
+        executions.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+        executions.truncate(cap);
+        Ok(executions)
+    }
 }
 
 #[cfg(test)]

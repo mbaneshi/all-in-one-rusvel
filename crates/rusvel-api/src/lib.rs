@@ -49,6 +49,7 @@ pub mod workflows;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 
 use axum::Router;
@@ -139,6 +140,8 @@ pub struct AppState {
     pub operator_prefs: operator_runtime::OperatorRuntimePrefs,
     /// When set, `POST /api/system/shutdown` signals graceful exit (same channel as Ctrl+C).
     pub shutdown_tx: Option<tokio::sync::watch::Sender<bool>>,
+    /// Set by `POST /api/system/reexec` when `RUSVEL_ALLOW_REEXEC` is enabled; composition root runs `exec` after server stops.
+    pub reexec_pending: Arc<AtomicBool>,
 }
 
 fn default_cors_header_values() -> Vec<HeaderValue> {
@@ -443,6 +446,11 @@ pub fn build_router_with_frontend(
             get(flow_routes::get_cross_engine_handoff_template),
         )
         .route(
+            "/api/flows/executions/recent",
+            get(flow_routes::list_recent_executions),
+        )
+        .route("/api/flows/node-types", get(flow_routes::list_node_types))
+        .route(
             "/api/flows/{id}",
             get(flow_routes::get_flow)
                 .put(flow_routes::update_flow)
@@ -473,7 +481,6 @@ pub fn build_router_with_frontend(
             "/api/flows/executions/{id}/checkpoint",
             get(flow_routes::get_checkpoint),
         )
-        .route("/api/flows/node-types", get(flow_routes::list_node_types))
         // Playbooks (multi-step pipelines)
         .route("/api/playbooks/runs", get(playbooks::list_runs))
         .route("/api/playbooks/runs/{run_id}", get(playbooks::get_run))
@@ -570,6 +577,7 @@ pub fn build_router_with_frontend(
             axum::routing::put(operator_runtime::put_operator_prefs),
         )
         .route("/api/system/shutdown", post(operator_runtime::post_shutdown))
+        .route("/api/system/reexec", post(operator_runtime::post_reexec))
         .route("/api/system/notify", post(system::notify))
         .route("/api/system/fix", post(system::self_fix))
         .route("/api/system/ingest-docs", post(system::ingest_docs))

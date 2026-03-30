@@ -5,7 +5,7 @@
 		getFlows,
 		getPlaybookRunsList,
 		getPlaybooksList,
-		getRecentFlowExecutionsAcrossFlows,
+		getRecentFlowExecutions,
 		getWebhooksList,
 		listAutomationSecrets,
 		type CronScheduleSummary,
@@ -49,10 +49,7 @@
 			runs = r.slice(0, 20);
 			secrets = sec;
 			webhooks = wh;
-			flowExecutions = await getRecentFlowExecutionsAcrossFlows(
-				f.map((x) => x.id),
-				24
-			);
+			flowExecutions = await getRecentFlowExecutions(24);
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'Failed to load automations');
 		} finally {
@@ -228,8 +225,8 @@
 					<a href="/flows" class="text-sm text-primary hover:underline">Open Flows editor →</a>
 				</div>
 				<p class="mb-2 text-xs text-muted-foreground">
-					Aggregated from <code class="rounded bg-muted px-1">GET /api/flows/:id/executions</code> per saved
-					flow (newest first).
+					From <code class="rounded bg-muted px-1">GET /api/flows/executions/recent</code> (single query,
+					newest first).
 				</p>
 				{#if flowExecutions.length === 0}
 					<p class="text-sm text-muted-foreground">No executions yet. Run a flow from the Flows page.</p>

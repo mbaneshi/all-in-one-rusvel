@@ -32,7 +32,7 @@ Department shell tab **`workflows`** (path `/dept/:id/workflows`) is labeled **A
 
 ## Executions hub
 
-The **`/automations`** page lists recent **flow** executions by calling `GET /api/flows/{id}/executions` for each saved flow and merging by `started_at` (n8n-style executions list, without a dedicated cross-flow index yet). **Playbook** runs use `GET /api/playbooks/runs`.
+The **`/automations`** page lists recent **flow** executions via **`GET /api/flows/executions/recent?limit=`** (one object-store scan in `flow-engine`, sorted by `started_at`). Per-flow history remains **`GET /api/flows/{id}/executions`**. **Playbook** runs use **`GET /api/playbooks/runs`**.
 
 ## MCP parity
 

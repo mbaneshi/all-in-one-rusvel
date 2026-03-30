@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use serde::Deserialize;
 use uuid::Uuid;
@@ -102,6 +102,30 @@ pub async fn delete_flow(
 }
 
 // ── Execution ────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct RecentExecutionsQuery {
+    /// Capped server-side to 200; default 50.
+    #[serde(default = "default_recent_exec_limit")]
+    pub limit: usize,
+}
+
+fn default_recent_exec_limit() -> usize {
+    50
+}
+
+/// `GET /api/flows/executions/recent?limit=50` — global recent runs (single store scan).
+pub async fn list_recent_executions(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<RecentExecutionsQuery>,
+) -> ApiResult<serde_json::Value> {
+    let engine = flow_engine(&state)?;
+    let execs = engine
+        .list_recent_executions(q.limit)
+        .await
+        .map_err(engine_err)?;
+    Ok(Json(serde_json::to_value(execs).map_err(engine_err)?))
+}
 
 #[derive(Debug, Deserialize)]
 pub struct RunFlowRequest {

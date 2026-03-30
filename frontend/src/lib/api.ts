@@ -292,6 +292,11 @@ export interface SystemRuntimeResponse {
 		metadata: unknown;
 	};
 	capabilities: OperatorCapabilityRow[];
+	reexec: {
+		env_enabled: boolean;
+		platform_unix: boolean;
+		available: boolean;
+	};
 	notes: Record<string, string>;
 }
 
@@ -310,6 +315,10 @@ export async function updateOperatorPrefs(body: {
 
 export async function postShutdown(): Promise<{ ok: boolean; message: string }> {
 	return request('/api/system/shutdown', { method: 'POST', body: '{}' });
+}
+
+export async function postReexec(): Promise<{ ok: boolean; message: string }> {
+	return request('/api/system/reexec', { method: 'POST', body: '{}' });
 }
 
 export async function getLlmProviders(): Promise<LlmProvidersReport> {
@@ -689,6 +698,8 @@ export interface Job {
 	terminal_pane_id?: string;
 	terminal_window_id?: string;
 	terminal_dept_id?: string;
+	/** Bounded dept pane scrollback captured when the job entered approval. */
+	terminal_context_snippet?: string;
 }
 
 export async function getPendingApprovals(): Promise<Job[]> {
@@ -1712,24 +1723,11 @@ export async function getFlowExecutions(flowId: string): Promise<FlowExecution[]
 	return Array.isArray(v) ? (v as FlowExecution[]) : [];
 }
 
-/** Recent executions across many flows (automations hub); newest first, capped. */
-export async function getRecentFlowExecutionsAcrossFlows(
-	flowIds: string[],
-	limit: number
-): Promise<FlowExecution[]> {
-	if (flowIds.length === 0 || limit <= 0) return [];
-	const batches = await Promise.all(
-		flowIds.map(async (fid) => {
-			try {
-				return await getFlowExecutions(fid);
-			} catch {
-				return [];
-			}
-		})
-	);
-	const flat = batches.flat();
-	flat.sort((a, b) => (b.started_at ?? '').localeCompare(a.started_at ?? ''));
-	return flat.slice(0, limit);
+/** `GET /api/flows/executions/recent?limit=` — single request, all flows (server sorts by started_at). */
+export async function getRecentFlowExecutions(limit = 50): Promise<FlowExecution[]> {
+	const q = new URLSearchParams();
+	q.set('limit', String(Math.min(200, Math.max(1, limit))));
+	return request(`/api/flows/executions/recent?${q.toString()}`);
 }
 
 /** Terminal pane for a flow execution (from `PaneSource::FlowNode`). */
