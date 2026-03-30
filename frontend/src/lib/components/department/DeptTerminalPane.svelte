@@ -8,6 +8,10 @@
 		terminalWindowAddPaneUrl,
 		terminalWindowLayoutUrl
 	} from '$lib/clientTerminalApi';
+	import {
+		fetchDeptTerminalFromSnapshot,
+		syncTerminalLayoutFromSnapshot
+	} from '$lib/terminalSessionRestore';
 
 	let {
 		dept,
@@ -58,24 +62,41 @@
 			terminalLoading = true;
 			terminalErr = '';
 		});
-		const url = terminalDeptPaneUrl(d, sid);
 		const ac = new AbortController();
 		const timer = setTimeout(() => ac.abort(), OPEN_TIMEOUT_MS);
-		fetch(url, { signal: ac.signal })
-			.then((r) => {
-				if (!r.ok) return r.text().then((t) => Promise.reject(new Error(t || r.statusText)));
-				return r.json();
-			})
-			.then((j: { pane_id?: string; window_id?: string }) => {
-				if (!cancelled && j.pane_id && j.window_id) {
+		void (async () => {
+			try {
+				const restored = await fetchDeptTerminalFromSnapshot(sid, d);
+				if (cancelled) return;
+				if (restored) {
+					paneIds = restored.paneIds;
+					windowId = restored.windowId;
+					terminalPaneForKey = key;
+					void syncTerminalLayoutFromSnapshot(
+						restored.windowId,
+						sid,
+						restored.layout,
+						restored.paneIds.length
+					);
+					return;
+				}
+
+				const url = terminalDeptPaneUrl(d, sid);
+				const r = await fetch(url, { signal: ac.signal });
+				if (!r.ok) {
+					const t = await r.text();
+					throw new Error(t || r.statusText);
+				}
+				const j = (await r.json()) as { pane_id?: string; window_id?: string };
+				if (cancelled) return;
+				if (j.pane_id && j.window_id) {
 					paneIds = [j.pane_id];
 					windowId = j.window_id;
 					terminalPaneForKey = key;
-				} else if (!cancelled && (!j.pane_id || !j.window_id)) {
+				} else {
 					throw new Error('Invalid terminal response (need pane_id and window_id)');
 				}
-			})
-			.catch((e: unknown) => {
+			} catch (e: unknown) {
 				if (!cancelled) {
 					if (e instanceof DOMException && e.name === 'AbortError') {
 						terminalErr = `Opening terminal timed out after ${OPEN_TIMEOUT_MS / 1000}s (check API is reachable via this origin)`;
@@ -83,11 +104,11 @@
 						terminalErr = e instanceof Error ? e.message : 'Failed to open terminal';
 					}
 				}
-			})
-			.finally(() => {
+			} finally {
 				clearTimeout(timer);
 				if (!cancelled) terminalLoading = false;
-			});
+			}
+		})();
 		return () => {
 			cancelled = true;
 			clearTimeout(timer);

@@ -7,13 +7,16 @@
 		jobKind,
 		payload,
 		onApprove,
-		onReject
+		onReject,
+		terminalDeptId
 	}: {
 		jobId: string;
 		jobKind: string;
 		payload: Record<string, unknown>;
 		onApprove: (jobId: string) => void;
 		onReject: (jobId: string) => void;
+		/** When set, show a link to the department terminal (ADR-008 context). */
+		terminalDeptId?: string;
 	} = $props();
 
 	let decided = $state(false);
@@ -49,6 +52,14 @@
 				<dd class="min-w-0 break-words text-foreground">{r.value}</dd>
 			{/each}
 		</dl>
+	{/if}
+	{#if terminalDeptId}
+		<a
+			href="/dept/{terminalDeptId}/terminal"
+			class="mt-2 inline-block text-[11px] text-primary underline underline-offset-2"
+		>
+			Open department terminal
+		</a>
 	{/if}
 	<details class="mt-2 group">
 		<summary

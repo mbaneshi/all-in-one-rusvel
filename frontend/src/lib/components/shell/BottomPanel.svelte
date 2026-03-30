@@ -6,6 +6,7 @@
 	import { activeSession, bottomPanelOpen, bottomPanelTab } from '$lib/stores';
 	import type { BottomPanelTab } from '$lib/stores';
 	import { terminalDeptPaneUrl } from '$lib/clientTerminalApi';
+	import { fetchDeptTerminalFromSnapshot } from '$lib/terminalSessionRestore';
 	import { getDeptEvents, getJobs, type Event, type JobListItem } from '$lib/api';
 	import Button from '$lib/components/ui/Button.svelte';
 
@@ -86,24 +87,34 @@
 		let cancelled = false;
 		terminalLoading = true;
 		terminalErr = '';
-		const url = terminalDeptPaneUrl(deptId, sessionId);
-		fetch(url)
-			.then((r) => {
-				if (!r.ok) return r.text().then((t) => Promise.reject(new Error(t || r.statusText)));
-				return r.json();
-			})
-			.then((j: { pane_id?: string }) => {
+		void (async () => {
+			try {
+				const restored = await fetchDeptTerminalFromSnapshot(sessionId, deptId);
+				if (cancelled) return;
+				const first = restored?.paneIds[0];
+				if (first) {
+					terminalPaneId = first;
+					terminalKey = key;
+					return;
+				}
+
+				const url = terminalDeptPaneUrl(deptId, sessionId);
+				const r = await fetch(url);
+				if (!r.ok) {
+					const t = await r.text();
+					throw new Error(t || r.statusText);
+				}
+				const j = (await r.json()) as { pane_id?: string };
 				if (!cancelled && j.pane_id) {
 					terminalPaneId = j.pane_id;
 					terminalKey = key;
 				}
-			})
-			.catch((e: unknown) => {
+			} catch (e: unknown) {
 				if (!cancelled) terminalErr = e instanceof Error ? e.message : 'Failed to open terminal';
-			})
-			.finally(() => {
+			} finally {
 				if (!cancelled) terminalLoading = false;
-			});
+			}
+		})();
 		return () => {
 			cancelled = true;
 		};

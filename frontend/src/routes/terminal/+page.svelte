@@ -5,6 +5,7 @@
 	import { terminalDeptPaneUrl } from '$lib/clientTerminalApi';
 	import DeptTerminal from '$lib/components/DeptTerminal.svelte';
 	import { STANDALONE_TERMINAL_DEPT_ID } from '$lib/terminalConstants';
+	import { fetchDeptTerminalFromSnapshot } from '$lib/terminalSessionRestore';
 
 	let currentSession: import('$lib/api').SessionSummary | null = $state(get(activeSession));
 	let terminalPaneId = $state<string | null>(null);
@@ -15,6 +16,16 @@
 		terminalLoading = true;
 		terminalErr = '';
 		try {
+			const restored = await fetchDeptTerminalFromSnapshot(
+				sessionId,
+				STANDALONE_TERMINAL_DEPT_ID
+			);
+			const first = restored?.paneIds[0];
+			if (first) {
+				terminalPaneId = first;
+				return;
+			}
+
 			const url = terminalDeptPaneUrl(STANDALONE_TERMINAL_DEPT_ID, sessionId);
 			const r = await fetch(url);
 			if (!r.ok) {

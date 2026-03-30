@@ -495,6 +495,11 @@
 											payload={tc.args}
 											onApprove={handleApprove}
 											onReject={handleReject}
+											terminalDeptId={
+												typeof approvalData['terminal_dept_id'] === 'string'
+													? approvalData['terminal_dept_id']
+													: dept
+											}
 										/>
 									{/if}
 								</div>
