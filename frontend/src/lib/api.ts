@@ -1706,6 +1706,32 @@ export async function getFlowNodeTypes(): Promise<string[]> {
 	return request('/api/flows/node-types');
 }
 
+/** `GET /api/flows/{flowId}/executions` — history for one DAG. */
+export async function getFlowExecutions(flowId: string): Promise<FlowExecution[]> {
+	const v = await request<unknown>(`/api/flows/${encodeURIComponent(flowId)}/executions`);
+	return Array.isArray(v) ? (v as FlowExecution[]) : [];
+}
+
+/** Recent executions across many flows (automations hub); newest first, capped. */
+export async function getRecentFlowExecutionsAcrossFlows(
+	flowIds: string[],
+	limit: number
+): Promise<FlowExecution[]> {
+	if (flowIds.length === 0 || limit <= 0) return [];
+	const batches = await Promise.all(
+		flowIds.map(async (fid) => {
+			try {
+				return await getFlowExecutions(fid);
+			} catch {
+				return [];
+			}
+		})
+	);
+	const flat = batches.flat();
+	flat.sort((a, b) => (b.started_at ?? '').localeCompare(a.started_at ?? ''));
+	return flat.slice(0, limit);
+}
+
 /** Terminal pane for a flow execution (from `PaneSource::FlowNode`). */
 export interface FlowTerminalPane {
 	id: string;

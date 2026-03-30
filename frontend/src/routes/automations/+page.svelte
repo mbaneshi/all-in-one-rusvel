@@ -5,10 +5,12 @@
 		getFlows,
 		getPlaybookRunsList,
 		getPlaybooksList,
+		getRecentFlowExecutionsAcrossFlows,
 		getWebhooksList,
 		listAutomationSecrets,
 		type CronScheduleSummary,
 		type FlowDef,
+		type FlowExecution,
 		type PlaybookListItem,
 		type PlaybookRunListItem,
 		type SecretListItem,
@@ -25,6 +27,7 @@
 	let runs: PlaybookRunListItem[] = $state([]);
 	let secrets: SecretListItem[] = $state([]);
 	let webhooks: WebhookListItem[] = $state([]);
+	let flowExecutions: FlowExecution[] = $state([]);
 	let sessionId = $state<string | null>(null);
 
 	activeSession.subscribe((s) => (sessionId = s?.id ?? null));
@@ -46,6 +49,10 @@
 			runs = r.slice(0, 20);
 			secrets = sec;
 			webhooks = wh;
+			flowExecutions = await getRecentFlowExecutionsAcrossFlows(
+				f.map((x) => x.id),
+				24
+			);
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'Failed to load automations');
 		} finally {
@@ -64,6 +71,11 @@
 	function isAutomationCron(row: CronScheduleSummary): boolean {
 		return row.event_kind === automationCronKind;
 	}
+
+	function flowNameForExecution(flowId: string): string {
+		const fl = flows.find((x) => x.id === flowId);
+		return fl?.name ?? flowId.slice(0, 8);
+	}
 </script>
 
 <div class="h-full overflow-auto p-6">
@@ -72,8 +84,8 @@
 		<div>
 			<h1 class="text-xl font-semibold text-foreground">Automations</h1>
 			<p class="text-sm text-muted-foreground">
-				Flows (DAG), playbooks, schedules, webhooks, secrets, and recent playbook runs — one hub
-				for the native automation plane.
+				Flows (DAG), playbooks, schedules, webhooks, secrets, and recent executions — one hub for the
+				native automation plane.
 			</p>
 		</div>
 		<button
@@ -211,6 +223,43 @@
 			</section>
 
 			<section class="rounded-xl border border-border bg-card p-4 lg:col-span-2">
+				<div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+					<h2 class="text-sm font-semibold text-foreground">Flow executions (recent)</h2>
+					<a href="/flows" class="text-sm text-primary hover:underline">Open Flows editor →</a>
+				</div>
+				<p class="mb-2 text-xs text-muted-foreground">
+					Aggregated from <code class="rounded bg-muted px-1">GET /api/flows/:id/executions</code> per saved
+					flow (newest first).
+				</p>
+				{#if flowExecutions.length === 0}
+					<p class="text-sm text-muted-foreground">No executions yet. Run a flow from the Flows page.</p>
+				{:else}
+					<div class="overflow-x-auto">
+						<table class="w-full text-left text-xs">
+							<thead>
+								<tr class="border-b border-border text-muted-foreground">
+									<th class="py-2 pr-2 font-medium">Flow</th>
+									<th class="py-2 pr-2 font-medium">Status</th>
+									<th class="py-2 pr-2 font-medium">Started</th>
+									<th class="py-2 pr-2 font-medium">Execution id</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each flowExecutions as ex}
+									<tr class="border-b border-border/60">
+										<td class="py-2 pr-2 text-foreground">{flowNameForExecution(ex.flow_id)}</td>
+										<td class="py-2 pr-2">{ex.status}</td>
+										<td class="py-2 pr-2 font-mono text-muted-foreground">{ex.started_at}</td>
+										<td class="py-2 pr-2 font-mono text-muted-foreground">{ex.id}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{/if}
+			</section>
+
+			<section class="rounded-xl border border-border bg-card p-4 lg:col-span-2">
 				<h2 class="mb-3 text-sm font-semibold text-foreground">Playbook runs (recent)</h2>
 				{#if runs.length === 0}
 					<p class="text-sm text-muted-foreground">No runs yet.</p>
@@ -224,10 +273,6 @@
 						{/each}
 					</ul>
 				{/if}
-				<p class="mt-2 text-xs text-muted-foreground">
-					Flow executions are listed per flow on the
-					<a href="/flows" class="text-primary underline">Flows</a> page.
-				</p>
 			</section>
 		</div>
 	{/if}

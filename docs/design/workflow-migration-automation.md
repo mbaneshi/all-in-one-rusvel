@@ -30,6 +30,10 @@ Keep using `/api/workflows` only until equivalent playbooks/flows exist; then re
 
 Department shell tab **`workflows`** (path `/dept/:id/workflows`) is labeled **Agent chains** in the UI to avoid confusion with DAG **Flows** (`/flows`).
 
+## Executions hub
+
+The **`/automations`** page lists recent **flow** executions by calling `GET /api/flows/{id}/executions` for each saved flow and merging by `started_at` (n8n-style executions list, without a dedicated cross-flow index yet). **Playbook** runs use `GET /api/playbooks/runs`.
+
 ## MCP parity
 
 Tools `automation_run_flow`, `automation_run_playbook`, and `automation_upsert_cron_schedule` use the same dispatcher and cron shape as HTTP. Stdio MCP requires the HTTP router to have registered `AppState` via `register_app_state_for_worker` (start the API server or use streamable HTTP MCP).
