@@ -212,7 +212,7 @@ pub async fn list_models() -> Json<Vec<ModelOption>> {
         ModelOption {
             value: "ollama/qwen2.5-coder:7b".into(),
             label: "Ollama · qwen2.5-coder".into(),
-            description: "Local code-oriented model when pulled in Ollama".into(),
+            description: "Requires this exact tag in Ollama: `ollama pull qwen2.5-coder:7b` (not the same as qwen2.5:0.5b).".into(),
         },
         ModelOption {
             value: "openai/gpt-4o".into(),
@@ -332,7 +332,7 @@ async fn probe_cli(cmd: &str, args: &[&str]) -> Option<bool> {
 pub async fn build_llm_providers_report_for_state(state: &AppState) -> LlmProvidersReport {
     let forced_pref = state.operator_prefs.force_claude_cli == Some(true);
     build_llm_providers_report(
-        state.claude_transport_cli,
+        state.claude_transport_cli.load(std::sync::atomic::Ordering::Relaxed),
         claude_cli_forced_by_env(),
         forced_pref,
     )

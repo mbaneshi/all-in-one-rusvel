@@ -139,6 +139,15 @@
 
 	let ollamaRow = $derived(llmReport?.providers.find((p) => p.id === 'ollama') ?? null);
 
+	/** True when app default is ollama/… but that tag is not in the daemon's model list (avoids "model not found" after Save). */
+	let ollamaTagNotInstalled = $derived.by(() => {
+		const m = appConfig?.model;
+		const live = llmReport?.ollama_models;
+		if (!m?.startsWith('ollama/') || !live?.length) return false;
+		const tag = m.slice('ollama/'.length);
+		return !live.includes(tag);
+	});
+
 	loadAppConfig();
 	loadLlmProviders();
 </script>
@@ -175,16 +184,14 @@
 			<p class="mt-2 text-xs text-foreground/90 leading-relaxed">
 				<strong>Switch API vs CLI from the UI:</strong>
 				<a href="/settings/control" class="font-medium text-primary underline">Settings → Control center</a>
-				→ Operator preferences → save, then <strong>restart</strong> the Rusvel server (LLM adapters are
-				registered at boot). Saving <em>App defaults</em> on this page does not change API vs CLI.
+				→ Operator preferences → save. The change applies <strong>immediately</strong> (no restart needed).
+				Saving <em>App defaults</em> on this page does not change API vs CLI.
 			</p>
 			{#if llmReport.claude_effective_transport === 'api'}
 				<p class="mt-2 text-xs text-foreground/90 leading-relaxed">
-					If chat shows <strong>credit balance</strong> errors: add API credits, or set
-					<code class="rounded bg-muted px-1 font-mono">RUSVEL_USE_CLAUDE_CLI=1</code> and
-					<strong>restart Rusvel</strong> to force CLI while keeping
-					<code class="rounded bg-muted px-1">ANTHROPIC_API_KEY</code> in your environment, or remove the key
-					and restart.
+					If chat shows <strong>credit balance</strong> errors: add API credits, or go to
+					<a href="/settings/control" class="font-medium text-primary underline">Control center</a>
+					and switch to <strong>Force CLI</strong> to use your Claude subscription instead.
 				</p>
 			{/if}
 			{#if llmReport.claude_cli_forced_by_env}
@@ -350,6 +357,18 @@
 					</select>
 					{#if selectedModelHelp}
 						<p class="mt-1.5 text-xs text-muted-foreground leading-relaxed">{selectedModelHelp}</p>
+					{/if}
+					{#if ollamaTagNotInstalled && llmReport}
+						<div
+							class="mt-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs leading-relaxed text-foreground"
+							role="status"
+						>
+							<strong class="text-destructive">Ollama tag mismatch.</strong>
+							The default is <code class="rounded bg-muted px-1 font-mono">{appConfig.model}</code>, but that
+							name is not in the live list from {llmReport.ollama_host}. Either
+							<code class="rounded bg-muted px-1 font-mono">ollama pull {appConfig.model.replace(/^ollama\//, '')}</code>
+							or pick a chip under <strong>Live Ollama models</strong> above, then save again.
+						</div>
 					{/if}
 				</div>
 
