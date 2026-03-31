@@ -8,6 +8,11 @@
 		refreshPendingApprovalCount,
 		commandPaletteOpen
 	} from '$lib/stores';
+	import {
+		themePreference,
+		setThemePreference,
+		type ThemePreference
+	} from '$lib/design/theme.svelte';
 	let loading = $state(true);
 	let error = $state('');
 	let showNewSession = $state(false);
@@ -78,6 +83,14 @@
 		const found = currentSessions.find((s) => s.id === id);
 		if (found) activeSession.set(found);
 	}
+
+	const themeChoices: ThemePreference[] = ['system', 'light', 'dark'];
+
+	function themeSegClass(p: ThemePreference) {
+		return themePreference === p
+			? 'border-primary/50 bg-primary/15 text-foreground'
+			: 'border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground';
+	}
 </script>
 
 <header
@@ -134,6 +147,24 @@
 		{#if error}
 			<span class="text-xs text-destructive">{error}</span>
 		{/if}
+	</div>
+
+	<div
+		class="flex shrink-0 items-center rounded-md border border-border bg-secondary p-0.5"
+		role="group"
+		aria-label="Theme"
+	>
+		{#each themeChoices as p}
+			<button
+				type="button"
+				onclick={() => setThemePreference(p)}
+				class="rounded px-1.5 py-1 text-[10px] font-medium capitalize transition-colors {themeSegClass(p)}"
+				aria-pressed={themePreference === p}
+				title={p === 'system' ? 'Use system appearance' : `${p} mode`}
+			>
+				{p === 'system' ? 'Auto' : p}
+			</button>
+		{/each}
 	</div>
 
 	<button

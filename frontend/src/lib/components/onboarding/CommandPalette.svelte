@@ -11,6 +11,7 @@
 	import { createSession, deptHref, resolveDeptId } from '$lib/api';
 	import type { DepartmentDef } from '$lib/api';
 	import { deptExtraSections, deptShellNavItems, isDeptShellTabVisible } from '$lib/departmentManifest';
+	import { setThemePreference } from '$lib/design/theme.svelte';
 
 	let isOpen = $state(false);
 	let query = $state('');
@@ -80,6 +81,39 @@
 			}
 		];
 
+		const appearance: Command[] = [
+			{
+				id: 'theme-system',
+				label: 'Theme — use system',
+				group: 'Appearance',
+				icon: '◐',
+				action: () => {
+					setThemePreference('system');
+					close();
+				}
+			},
+			{
+				id: 'theme-light',
+				label: 'Theme — light',
+				group: 'Appearance',
+				icon: '☀',
+				action: () => {
+					setThemePreference('light');
+					close();
+				}
+			},
+			{
+				id: 'theme-dark',
+				label: 'Theme — dark',
+				group: 'Appearance',
+				icon: '☾',
+				action: () => {
+					setThemePreference('dark');
+					close();
+				}
+			}
+		];
+
 		const thisDept: Command[] = [];
 		if (currentDept) {
 			const base = `/dept/${encodeURIComponent(currentDept.id)}`;
@@ -128,6 +162,7 @@
 		const forgeId = resolveDeptId(deptList, 'forge', 'forge');
 		return [
 			...layout,
+			...appearance,
 			...thisDept,
 			{
 				id: 'nav-dashboard',
@@ -150,6 +185,13 @@
 				group: 'Navigation',
 				icon: '⚙',
 				action: () => navigate('/settings')
+			},
+			{
+				id: 'nav-settings-appearance',
+				label: 'Settings — Appearance',
+				group: 'Navigation',
+				icon: '⚙',
+				action: () => navigate('/settings/appearance')
 			},
 			{
 				id: 'nav-settings-llm',

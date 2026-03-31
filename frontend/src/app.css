@@ -233,3 +233,10 @@ body {
 ::-webkit-scrollbar-thumb:hover {
 	background: var(--color-neutral-600);
 }
+
+:root.light ::-webkit-scrollbar-thumb {
+	background: var(--color-neutral-400);
+}
+:root.light ::-webkit-scrollbar-thumb:hover {
+	background: var(--color-neutral-500);
+}
