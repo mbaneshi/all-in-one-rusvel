@@ -1,7 +1,6 @@
 <script lang="ts">
 	import {
-		themePreference,
-		systemPrefersDark,
+		themeState,
 		setThemePreference,
 		type ThemePreference
 	} from '$lib/design/theme.svelte';
@@ -31,11 +30,11 @@
 	}
 
 	let resolved = $derived(
-		themePreference === 'system'
-			? systemPrefersDark
+		themeState.preference === 'system'
+			? themeState.systemPrefersDark
 				? 'dark'
 				: 'light'
-			: themePreference
+			: themeState.preference
 	);
 </script>
 
@@ -58,9 +57,9 @@
 				type="button"
 				onclick={() => setThemePreference(o.value)}
 				class="rounded-md border px-4 py-2 text-sm font-medium transition-colors {segBtnClass(
-					themePreference === o.value
+					themeState.preference === o.value
 				)}"
-				aria-pressed={themePreference === o.value}
+				aria-pressed={themeState.preference === o.value}
 			>
 				{o.label}
 			</button>
@@ -69,7 +68,7 @@
 
 	<p class="text-xs text-muted-foreground">
 		Active appearance: <span class="font-medium text-foreground capitalize">{resolved}</span>
-		{#if themePreference === 'system'}
+		{#if themeState.preference === 'system'}
 			(from system)
 		{/if}
 	</p>

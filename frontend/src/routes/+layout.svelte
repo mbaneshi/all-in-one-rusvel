@@ -8,20 +8,16 @@
 	import IconRail from '$lib/components/shell/IconRail.svelte';
 	import TopBar from '$lib/components/shell/TopBar.svelte';
 	import { Toaster } from 'svelte-sonner';
-	import {
-		themePreference,
-		systemPrefersDark,
-		initTheme
-	} from '$lib/design/theme.svelte';
+	import { themeState, initTheme } from '$lib/design/theme.svelte';
 
 	let { children }: { children: Snippet } = $props();
 
 	let toasterTheme = $derived<'light' | 'dark'>(
-		themePreference === 'system'
-			? systemPrefersDark
+		themeState.preference === 'system'
+			? themeState.systemPrefersDark
 				? 'dark'
 				: 'light'
-			: themePreference === 'light'
+			: themeState.preference === 'light'
 				? 'light'
 				: 'dark'
 	);

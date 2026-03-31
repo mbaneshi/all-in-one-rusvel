@@ -9,7 +9,7 @@
 		commandPaletteOpen
 	} from '$lib/stores';
 	import {
-		themePreference,
+		themeState,
 		setThemePreference,
 		type ThemePreference
 	} from '$lib/design/theme.svelte';
@@ -87,7 +87,7 @@
 	const themeChoices: ThemePreference[] = ['system', 'light', 'dark'];
 
 	function themeSegClass(p: ThemePreference) {
-		return themePreference === p
+		return themeState.preference === p
 			? 'border-primary/50 bg-primary/15 text-foreground'
 			: 'border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground';
 	}
@@ -159,7 +159,7 @@
 				type="button"
 				onclick={() => setThemePreference(p)}
 				class="rounded px-1.5 py-1 text-[10px] font-medium capitalize transition-colors {themeSegClass(p)}"
-				aria-pressed={themePreference === p}
+				aria-pressed={themeState.preference === p}
 				title={p === 'system' ? 'Use system appearance' : `${p} mode`}
 			>
 				{p === 'system' ? 'Auto' : p}

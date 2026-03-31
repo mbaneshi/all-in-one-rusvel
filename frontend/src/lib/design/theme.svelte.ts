@@ -8,12 +8,15 @@ export type ThemePreference = 'system' | 'light' | 'dark';
 const COOKIE = 'rusvel-theme';
 const MAX_AGE_SEC = 31536000;
 
-export let themePreference = $state<ThemePreference>('system');
-export let systemPrefersDark = $state(false);
+/** Mutate fields only — exported $state cannot be reassigned (Svelte rule). */
+export const themeState = $state({
+	preference: 'system' as ThemePreference,
+	systemPrefersDark: false
+});
 
 function resolvedFromState(): 'light' | 'dark' {
-	if (themePreference === 'system') return systemPrefersDark ? 'dark' : 'light';
-	return themePreference;
+	if (themeState.preference === 'system') return themeState.systemPrefersDark ? 'dark' : 'light';
+	return themeState.preference;
 }
 
 export function getResolvedTheme(): 'light' | 'dark' {
@@ -43,7 +46,7 @@ function parsePreferenceFromCookie(): ThemePreference {
 }
 
 export function setThemePreference(pref: ThemePreference) {
-	themePreference = pref;
+	themeState.preference = pref;
 	writeCookie(pref);
 	applyThemeToDocument();
 }
@@ -53,13 +56,13 @@ export function initTheme(): () => void {
 	if (typeof document === 'undefined' || typeof window === 'undefined') {
 		return () => {};
 	}
-	themePreference = parsePreferenceFromCookie();
+	themeState.preference = parsePreferenceFromCookie();
 	const mql = window.matchMedia('(prefers-color-scheme: dark)');
-	systemPrefersDark = mql.matches;
+	themeState.systemPrefersDark = mql.matches;
 	applyThemeToDocument();
 
 	const onChange = (e: MediaQueryListEvent) => {
-		systemPrefersDark = e.matches;
+		themeState.systemPrefersDark = e.matches;
 		applyThemeToDocument();
 	};
 	mql.addEventListener('change', onChange);
