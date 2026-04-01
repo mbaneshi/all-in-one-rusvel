@@ -95,7 +95,10 @@ export function isDeptShellTabVisible(tabId: string, d: DepartmentDef): boolean 
 /** Optional dept sub-routes (pipeline, calendar) — single registry for the shell. */
 export const deptExtraSections: Record<string, { segment: string; label: string }[]> = {
 	harvest: [{ segment: 'pipeline', label: 'Pipeline' }],
-	content: [{ segment: 'calendar', label: 'Calendar' }],
+	content: [
+		{ segment: 'studio', label: 'Studio' },
+		{ segment: 'calendar', label: 'Calendar' }
+	],
 	gtm: [
 		{ segment: 'contacts', label: 'Contacts' },
 		{ segment: 'outreach', label: 'Outreach' },

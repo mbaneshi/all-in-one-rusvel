@@ -306,7 +306,7 @@ export async function getSystemRuntime(): Promise<SystemRuntimeResponse> {
 
 export async function updateOperatorPrefs(body: {
 	force_claude_cli: boolean | null;
-}): Promise<{ requires_restart: boolean; message: string; saved: unknown }> {
+}): Promise<{ requires_restart: boolean; message: string; saved: unknown; effective_cli?: boolean }> {
 	return request('/api/system/operator-prefs', {
 		method: 'PUT',
 		body: JSON.stringify(body)
@@ -989,6 +989,18 @@ export interface ContentItemRow {
 export async function getContentList(sessionId: string): Promise<ContentItemRow[]> {
 	const sp = new URLSearchParams({ session_id: sessionId });
 	return request<ContentItemRow[]>(`/api/dept/content/list?${sp}`);
+}
+export async function postContentRepurpose(
+	sessionId: string,
+	topic: string,
+	kinds: string[]
+): Promise<ContentItemRow[]> {
+	const results: ContentItemRow[] = [];
+	for (const kind of kinds) {
+		const item = await postContentDraft(sessionId, topic, kind);
+		results.push(item as ContentItemRow);
+	}
+	return results;
 }
 export async function getHarvestPipeline(sessionId: string): Promise<unknown> {
 	const sp = new URLSearchParams({ session_id: sessionId });

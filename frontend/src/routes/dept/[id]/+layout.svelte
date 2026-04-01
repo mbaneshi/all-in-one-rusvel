@@ -148,7 +148,9 @@
 						? 'bg-sidebar-primary/15 text-sidebar-primary font-medium'
 						: 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'}"
 				>
-					{#if ex.segment === 'pipeline'}
+					{#if ex.segment === 'studio'}
+						<BookOpen size={16} strokeWidth={1.75} class="shrink-0" />
+					{:else if ex.segment === 'pipeline'}
 						<LayoutGrid size={16} strokeWidth={1.75} class="shrink-0" />
 					{:else if ex.segment === 'calendar'}
 						<Calendar size={16} strokeWidth={1.75} class="shrink-0" />
