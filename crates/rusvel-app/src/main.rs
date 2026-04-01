@@ -502,6 +502,13 @@ async fn seed_defaults(storage: &Arc<dyn StoragePort>) -> Result<()> {
                 "enabled": true,
                 "metadata": {"engine": "code"}
             }),
+            serde_json::json!({
+                "id": uuid::Uuid::now_v7().to_string(),
+                "name": "Content Voice",
+                "content": "Writing style: direct, technical, first-person. Short sentences. No fluff or filler. Use code examples when relevant. Write like an engineer sharing hard-won insights, not a marketing copywriter. Open with a sharp hook — the first sentence determines 80% of reach. Close with a clear CTA. Adapt tone per platform: LinkedIn is professional but opinionated, Twitter is punchy and insight-dense, DEV.to is tutorial-style with depth.",
+                "enabled": true,
+                "metadata": {"engine": "content"}
+            }),
         ];
         for rule in &rules {
             let id = rule["id"].as_str().unwrap();
@@ -981,7 +988,7 @@ async fn main() -> Result<()> {
     let storage_for_boot: Arc<dyn rusvel_core::ports::StoragePort> = db.clone();
     let operator_prefs = rusvel_api::operator_runtime::load_operator_prefs(&storage_for_boot).await;
     let (llm_multi, claude_transport_cli) = llm_bootstrap::compose_llm_multi(&operator_prefs);
-    let base_llm: Arc<dyn rusvel_core::ports::LlmPort> = Arc::new(llm_multi);
+    let base_llm: Arc<dyn rusvel_core::ports::LlmPort> = llm_multi.clone();
     let metrics_store: Arc<dyn MetricStore> = db.clone() as Arc<dyn MetricStore>;
     let llm: Arc<dyn rusvel_core::ports::LlmPort> =
         Arc::new(CostTrackingLlm::with_metrics(base_llm, metrics_store));
@@ -1075,6 +1082,35 @@ async fn main() -> Result<()> {
     content_engine.register_platform(Arc::new(
         content_engine::adapters::devto::DevToAdapter::new(config.clone()),
     ));
+    // Load voice rules from profile + ObjectStore rules for the content department
+    {
+        let mut voice_parts: Vec<String> = Vec::new();
+        if let Ok(profile) = rusvel_core::UserProfile::load(data_dir.join("profile.toml")) {
+            voice_parts.push(format!(
+                "Author: {}. Role: {}.",
+                profile.identity.name,
+                profile.identity.role
+            ));
+        }
+        if let Ok(rules) = db
+            .objects()
+            .list("rules", rusvel_core::domain::ObjectFilter::default())
+            .await
+        {
+            for val in &rules {
+                let engine = val["metadata"]["engine"].as_str().unwrap_or("");
+                let enabled = val["enabled"].as_bool().unwrap_or(true);
+                if enabled && (engine == "content" || engine.is_empty()) {
+                    if let Some(c) = val["content"].as_str() {
+                        voice_parts.push(c.to_string());
+                    }
+                }
+            }
+        }
+        if !voice_parts.is_empty() {
+            content_engine.set_voice_rules(voice_parts.join("\n\n"));
+        }
+    }
     let harvest_cfg = build_harvest_config(config.as_ref(), &data_dir.join("profile.toml"));
     let harvest_user_prompt = rusvel_core::UserProfile::load(data_dir.join("profile.toml"))
         .ok()
@@ -2142,7 +2178,8 @@ async fn main() -> Result<()> {
             failed_departments: failed_departments.clone(),
             data_dir: data_dir.clone(),
             http_listen: http_addr.to_string(),
-            claude_transport_cli,
+            llm_multi: llm_multi.clone(),
+            claude_transport_cli: Arc::new(AtomicBool::new(claude_transport_cli)),
             operator_prefs: operator_prefs.clone(),
             shutdown_tx: Some(shutdown_tx.clone()),
             reexec_pending: reexec_pending.clone(),
@@ -2291,7 +2328,8 @@ async fn main() -> Result<()> {
             failed_departments: failed_departments.clone(),
             data_dir: data_dir.clone(),
             http_listen: http_addr.to_string(),
-            claude_transport_cli,
+            llm_multi: llm_multi.clone(),
+            claude_transport_cli: Arc::new(AtomicBool::new(claude_transport_cli)),
             operator_prefs: operator_prefs.clone(),
             shutdown_tx: Some(shutdown_tx.clone()),
             reexec_pending: reexec_pending.clone(),

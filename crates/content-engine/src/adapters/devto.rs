@@ -75,14 +75,20 @@ impl PlatformAdapter for DevToAdapter {
         let key = self.api_key()?;
         let body_md = self.format_content(&content.body_markdown);
         let tags = Self::extract_tags(content);
-        let body = json!({
-            "article": {
-                "title": content.title,
-                "body_markdown": body_md,
-                "published": true,
-                "tags": tags,
-            }
+        let canonical_url = content
+            .metadata
+            .get("canonical_url")
+            .and_then(|v| v.as_str());
+        let mut article = json!({
+            "title": content.title,
+            "body_markdown": body_md,
+            "published": true,
+            "tags": tags,
         });
+        if let Some(url) = canonical_url {
+            article["canonical_url"] = json!(url);
+        }
+        let body = json!({ "article": article });
         let url = format!("{}/articles", self.api_base);
         let resp = self
             .client

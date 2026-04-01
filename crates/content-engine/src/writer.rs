@@ -116,11 +116,28 @@ pub fn build_code_prompt(summary: &CodeAnalysisSummary, kind: &ContentKind) -> S
 /// AI content writer backed by an [`AgentPort`].
 pub struct ContentWriter {
     agent: Arc<dyn AgentPort>,
+    voice_rules: std::sync::RwLock<Option<String>>,
 }
 
 impl ContentWriter {
     pub fn new(agent: Arc<dyn AgentPort>) -> Self {
-        Self { agent }
+        Self {
+            agent,
+            voice_rules: std::sync::RwLock::new(None),
+        }
+    }
+
+    /// Set voice/style rules that will be injected into all content generation prompts.
+    pub fn set_voice_rules(&self, rules: impl Into<String>) {
+        *self.voice_rules.write().unwrap() = Some(rules.into());
+    }
+
+    fn system_prompt(&self, role: &str) -> String {
+        let base = format!("You are {role}.");
+        match self.voice_rules.read().unwrap().as_deref() {
+            Some(rules) => format!("{base}\n\n--- Voice & Style Rules ---\n{rules}"),
+            None => base,
+        }
     }
 
     /// Ask the LLM to draft a new content item for the given topic and kind.
@@ -140,7 +157,7 @@ impl ContentWriter {
             session_id: *session_id,
             model: None,
             tools: vec![],
-            instructions: Some("You are a professional content writer.".into()),
+            instructions: Some(self.system_prompt("a professional content writer")),
             budget_limit: None,
             max_iterations: None,
             permission_mode: Default::default(),
@@ -191,7 +208,7 @@ impl ContentWriter {
             session_id: content.session_id,
             model: None,
             tools: vec![],
-            instructions: Some("You are a social-media content strategist.".into()),
+            instructions: Some(self.system_prompt("a social-media content strategist")),
             budget_limit: None,
             max_iterations: None,
             permission_mode: Default::default(),
@@ -214,7 +231,7 @@ impl ContentWriter {
             session_id: content.session_id,
             model: None,
             tools: vec![],
-            instructions: Some("You are an editorial reviewer.".into()),
+            instructions: Some(self.system_prompt("an editorial reviewer")),
             budget_limit: None,
             max_iterations: None,
             permission_mode: Default::default(),

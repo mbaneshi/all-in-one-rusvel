@@ -1,4 +1,7 @@
-//! LinkedIn UGC Posts API adapter (`POST /v2/ugcPosts`).
+//! LinkedIn REST Posts API adapter (`POST /rest/posts`).
+//!
+//! Migrated from deprecated `/v2/ugcPosts` to the current REST Posts API.
+//! See: <https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/posts-api>
 
 use std::sync::Arc;
 
@@ -12,9 +15,13 @@ use serde_json::json;
 
 use crate::platform::{PlatformAdapter, PostMetrics, PublishResult};
 
-const DEFAULT_API_BASE: &str = "https://api.linkedin.com/v2";
+const DEFAULT_API_BASE: &str = "https://api.linkedin.com";
 
-/// Publishes share-style posts via LinkedIn's UGC API using a bearer token from [`ConfigPort`] key `linkedin_token`.
+/// Publishes posts via LinkedIn's REST Posts API.
+///
+/// Required config keys:
+/// - `linkedin_token`: OAuth 2.0 access token with `w_member_social` scope
+/// - `linkedin_person_id`: Your LinkedIn person URN ID (from `/v2/userinfo` `sub` field)
 pub struct LinkedInAdapter {
     config: Arc<dyn ConfigPort>,
     client: reqwest::Client,
@@ -50,6 +57,24 @@ impl LinkedInAdapter {
             )),
         }
     }
+
+    fn person_urn(&self) -> Result<String> {
+        match self.config.get_value("linkedin_person_id")? {
+            Some(v) => {
+                let id: String = serde_json::from_value(v)
+                    .map_err(|e| RusvelError::Serialization(e.to_string()))?;
+                Ok(format!("urn:li:person:{id}"))
+            }
+            None => Err(RusvelError::Validation(
+                "config key `linkedin_person_id` is not set — get it from GET /v2/userinfo `sub` field".into(),
+            )),
+        }
+    }
+
+    fn api_version() -> String {
+        let now = Utc::now();
+        format!("{}{:02}", now.format("%Y"), now.format("%m"))
+    }
 }
 
 #[async_trait]
@@ -60,30 +85,41 @@ impl PlatformAdapter for LinkedInAdapter {
 
     async fn publish(&self, content: &ContentItem) -> Result<PublishResult> {
         let token = self.bearer()?;
+        let author = self.person_urn()?;
         let text = self.format_content(&content.body_markdown);
         let body = json!({
-            "author": "urn:li:organization:0",
-            "lifecycleState": "PUBLISHED",
-            "specificContent": {
-                "com.linkedin.ugc.ShareContent": {
-                    "shareCommentary": { "text": text },
-                    "shareMediaCategory": "NONE"
-                }
+            "author": author,
+            "commentary": text,
+            "visibility": "PUBLIC",
+            "distribution": {
+                "feedDistribution": "MAIN_FEED",
+                "targetEntities": [],
+                "thirdPartyDistributionChannels": []
             },
-            "visibility": { "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC" }
+            "lifecycleState": "PUBLISHED",
+            "isReshareDisabledByAuthor": false
         });
-        let url = format!("{}/ugcPosts", self.api_base);
+        let url = format!("{}/rest/posts", self.api_base);
         let resp = self
             .client
             .post(&url)
             .header("Authorization", format!("Bearer {token}"))
             .header("X-Restli-Protocol-Version", "2.0.0")
+            .header("LinkedIn-Version", Self::api_version())
+            .header("Content-Type", "application/json")
             .json(&body)
             .send()
             .await
             .map_err(|e| RusvelError::Storage(e.to_string()))?;
 
         let status = resp.status();
+        // Post ID comes from x-restli-id response header on the new API
+        let post_id = resp
+            .headers()
+            .get("x-restli-id")
+            .and_then(|v| v.to_str().ok())
+            .map(String::from);
+
         let body_bytes = resp
             .bytes()
             .await
@@ -102,12 +138,13 @@ impl PlatformAdapter for LinkedInAdapter {
             )));
         }
 
-        let v: serde_json::Value = serde_json::from_slice(&body_bytes)
-            .map_err(|e| RusvelError::Serialization(e.to_string()))?;
-        let post_id = v["id"]
-            .as_str()
-            .map(String::from)
-            .unwrap_or_else(|| "unknown".into());
+        // Fallback: try response body if header missing
+        let post_id = post_id.or_else(|| {
+            serde_json::from_slice::<serde_json::Value>(&body_bytes)
+                .ok()
+                .and_then(|v| v["id"].as_str().map(String::from))
+        }).unwrap_or_else(|| "unknown".into());
+
         Ok(PublishResult {
             post_id: post_id.clone(),
             url: format!("https://www.linkedin.com/feed/update/{post_id}"),
@@ -116,8 +153,10 @@ impl PlatformAdapter for LinkedInAdapter {
     }
 
     async fn metrics(&self, _post_id: &str) -> Result<PostMetrics> {
+        // LinkedIn member post analytics require `r_member_social` scope which
+        // needs separate LinkedIn approval. Use Shield ($25/mo) for analytics.
         Err(RusvelError::Internal(
-            "LinkedIn metrics API not wired in this adapter".into(),
+            "LinkedIn metrics require r_member_social scope (restricted). Use Shield for analytics.".into(),
         ))
     }
 
@@ -141,22 +180,22 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     struct TestCfg {
-        token: Mutex<String>,
+        values: Mutex<std::collections::HashMap<String, serde_json::Value>>,
     }
     impl TestCfg {
-        fn new(token: &str) -> Self {
+        fn new(token: &str, person_id: &str) -> Self {
+            let mut m = std::collections::HashMap::new();
+            m.insert("linkedin_token".into(), json!(token));
+            m.insert("linkedin_person_id".into(), json!(person_id));
             Self {
-                token: Mutex::new(token.into()),
+                values: Mutex::new(m),
             }
         }
     }
     impl ConfigPort for TestCfg {
         fn get_value(&self, key: &str) -> rusvel_core::error::Result<Option<serde_json::Value>> {
-            if key == "linkedin_token" {
-                let t = self.token.lock().unwrap();
-                return Ok(Some(json!(t.as_str())));
-            }
-            Ok(None)
+            let map = self.values.lock().unwrap();
+            Ok(map.get(key).cloned())
         }
         fn set_value(&self, _: &str, _: serde_json::Value) -> rusvel_core::error::Result<()> {
             Ok(())
@@ -183,35 +222,73 @@ mod tests {
     async fn publish_success_against_mock_server() {
         let mock_server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path("/ugcPosts"))
+            .and(path("/rest/posts"))
             .and(header("Authorization", "Bearer test-token"))
-            .respond_with(ResponseTemplate::new(201).set_body_json(json!({
-                "id": "urn:li:ugcPost:123"
-            })))
+            .respond_with(
+                ResponseTemplate::new(201)
+                    .append_header("x-restli-id", "urn:li:share:123456")
+                    .set_body_string(""),
+            )
             .mount(&mock_server)
             .await;
 
-        let cfg = Arc::new(TestCfg::new("test-token"));
+        let cfg = Arc::new(TestCfg::new("test-token", "abc123"));
         let adapter = LinkedInAdapter::with_base_url(cfg, mock_server.uri());
 
         let item = sample_item();
         let r = adapter.publish(&item).await.unwrap();
-        assert!(r.post_id.contains("123"));
+        assert!(r.post_id.contains("123456"));
         assert!(r.url.contains("linkedin.com"));
+    }
+
+    #[tokio::test]
+    async fn publish_falls_back_to_body_id() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/rest/posts"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(json!({
+                "id": "urn:li:share:789"
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let cfg = Arc::new(TestCfg::new("t", "person1"));
+        let adapter = LinkedInAdapter::with_base_url(cfg, mock_server.uri());
+        let r = adapter.publish(&sample_item()).await.unwrap();
+        assert!(r.post_id.contains("789"));
     }
 
     #[tokio::test]
     async fn publish_maps_429_to_error() {
         let mock_server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path("/ugcPosts"))
+            .and(path("/rest/posts"))
             .respond_with(ResponseTemplate::new(429).set_body_string("slow down"))
             .mount(&mock_server)
             .await;
 
-        let cfg = Arc::new(TestCfg::new("t"));
+        let cfg = Arc::new(TestCfg::new("t", "p"));
         let adapter = LinkedInAdapter::with_base_url(cfg, mock_server.uri());
         let err = adapter.publish(&sample_item()).await.unwrap_err();
         assert!(err.to_string().contains("429") || err.to_string().contains("rate"));
+    }
+
+    #[tokio::test]
+    async fn missing_person_id_returns_error() {
+        struct TokenOnlyCfg;
+        impl ConfigPort for TokenOnlyCfg {
+            fn get_value(&self, key: &str) -> rusvel_core::error::Result<Option<serde_json::Value>> {
+                if key == "linkedin_token" {
+                    return Ok(Some(json!("tok")));
+                }
+                Ok(None)
+            }
+            fn set_value(&self, _: &str, _: serde_json::Value) -> rusvel_core::error::Result<()> {
+                Ok(())
+            }
+        }
+        let adapter = LinkedInAdapter::new(Arc::new(TokenOnlyCfg));
+        let err = adapter.publish(&sample_item()).await.unwrap_err();
+        assert!(err.to_string().contains("linkedin_person_id"));
     }
 }

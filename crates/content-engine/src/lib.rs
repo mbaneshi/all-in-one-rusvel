@@ -73,6 +73,12 @@ impl ContentEngine {
         }
     }
 
+    /// Set voice/style rules injected into all content generation prompts.
+    /// Typically loaded from the content department's rules in ObjectStore.
+    pub fn set_voice_rules(&self, rules: impl Into<String>) {
+        self.writer.set_voice_rules(rules);
+    }
+
     /// Register a platform adapter for publishing.
     pub fn register_platform(&self, adapter: Arc<dyn PlatformAdapter>) {
         let key = format!("{:?}", adapter.platform());
