@@ -31,3 +31,19 @@ pub fn claude_transport_is_cli() -> bool {
 pub fn claude_cli_forced_by_env() -> bool {
     env_truthy("RUSVEL_USE_CLAUDE_CLI")
 }
+
+/// Build the appropriate Claude provider for hot-swap.
+///
+/// When `use_cli` is `true`, returns [`crate::ClaudeCliProvider`]; otherwise
+/// [`crate::ClaudeProvider`] using `ANTHROPIC_API_KEY`.
+pub fn build_claude_provider(use_cli: bool) -> std::sync::Arc<dyn rusvel_core::ports::LlmPort> {
+    if use_cli {
+        std::sync::Arc::new(crate::ClaudeCliProvider::max_subscription())
+    } else {
+        let key = std::env::var("ANTHROPIC_API_KEY")
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        std::sync::Arc::new(crate::ClaudeProvider::new(key))
+    }
+}

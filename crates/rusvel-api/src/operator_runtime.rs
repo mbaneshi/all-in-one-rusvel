@@ -1,7 +1,7 @@
 //! Operator control center: runtime snapshot, persisted prefs, graceful shutdown.
 //!
-//! Prefs live in [`ObjectStore`] (`system` / `operator_prefs`). Changes require process restart
-//! to affect LLM registration (composition root in `rusvel-app`).
+//! Prefs live in [`ObjectStore`] (`system` / `operator_prefs`). Claude transport changes
+//! are hot-swapped immediately via [`MultiProvider::swap_provider`].
 
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -12,6 +12,7 @@ use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use rusvel_core::domain::ModelProvider;
 use rusvel_core::ports::StoragePort;
 
 use crate::AppState;
@@ -85,7 +86,7 @@ pub struct PutOperatorPrefsBody {
     pub force_claude_cli: Option<bool>,
 }
 
-/// `PUT /api/system/operator-prefs` — save prefs; LLM stack applies after restart.
+/// `PUT /api/system/operator-prefs` — save prefs and hot-swap Claude provider.
 pub async fn put_operator_prefs(
     State(state): State<Arc<AppState>>,
     Json(body): Json<PutOperatorPrefsBody>,
@@ -105,11 +106,37 @@ pub async fn put_operator_prefs(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
+    // Hot-swap Claude provider without restart.
+    let use_cli = resolve_claude_cli(&prefs);
+    let provider = rusvel_llm::build_claude_provider(use_cli);
+    state
+        .llm_multi
+        .swap_provider(ModelProvider::Claude, provider);
+    state
+        .claude_transport_cli
+        .store(use_cli, Ordering::Relaxed);
+
+    let transport = if use_cli { "CLI (claude -p)" } else { "API (Messages)" };
+    tracing::info!(target: "rusvel::llm", "hot-swapped Claude provider → {transport}");
+
     Ok(Json(json!({
-        "requires_restart": true,
-        "message": "Restart the Rusvel process to apply operator preferences (LLM registration is fixed at boot).",
+        "requires_restart": false,
+        "message": format!("Claude transport switched to {transport} (applied immediately)."),
         "saved": prefs,
+        "effective_cli": use_cli,
     })))
+}
+
+/// Resolve whether Claude traffic uses CLI for the given prefs.
+fn resolve_claude_cli(pref: &OperatorRuntimePrefs) -> bool {
+    let anthropic_key = std::env::var("ANTHROPIC_API_KEY")
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false);
+    match pref.force_claude_cli {
+        Some(true) => true,
+        Some(false) => !anthropic_key,
+        None => rusvel_llm::claude_transport_is_cli(),
+    }
 }
 
 /// `POST /api/system/shutdown` — graceful shutdown (pair with systemd/Docker/manual restart).
@@ -253,7 +280,7 @@ pub async fn get_runtime(
         "drift": {
             "claude": {
                 "env_suggests_cli": env_suggests_cli,
-                "effective_cli": state.claude_transport_cli,
+                "effective_cli": state.claude_transport_cli.load(Ordering::Relaxed),
                 "operator_pref_force_claude_cli": state.operator_prefs.force_claude_cli,
             }
         },
@@ -281,7 +308,7 @@ pub async fn get_runtime(
             "available": reexec_available,
         },
         "notes": {
-            "restart": "Env vars and operator prefs affecting LLM bootstrap apply only after process restart.",
+            "restart": "Claude transport (CLI vs API) is hot-swapped via PUT /api/system/operator-prefs. Other env var changes still require process restart.",
             "shutdown": "POST /api/system/shutdown exits the process when wired (use admin token if API auth is enabled).",
             "reexec": "POST /api/system/reexec performs graceful shutdown then replaces this process with the same argv when RUSVEL_ALLOW_REEXEC=1 on Unix (admin token if API auth is enabled). Fragile under cargo run; prefer a supervisor or manual restart."
         }

@@ -10,6 +10,9 @@ use rusvel_core::domain::*;
 use rusvel_core::error::{Result, RusvelError};
 use rusvel_core::ports::LlmPort;
 
+/// Beta header for prompt caching.
+const ANTHROPIC_BETA_PROMPT_CACHING: &str = "prompt-caching-2024-07-31";
+
 /// Beta header for Claude computer use (legacy tool type `computer_20250124`).
 const ANTHROPIC_BETA_COMPUTER_USE_LEGACY: &str = "computer-use-2025-01-24";
 /// Beta header for newer computer-use tool schemas (Opus/Sonnet 4.6 family).
@@ -93,6 +96,10 @@ impl LlmPort for ClaudeProvider {
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", "2023-06-01")
             .header("content-type", "application/json");
+        // Prompt caching beta — always enabled when system blocks carry cache_control.
+        if claude_req.system.is_some() {
+            req = req.header("anthropic-beta", ANTHROPIC_BETA_PROMPT_CACHING);
+        }
         if let Some(beta) = computer_use_beta_header(&request.tools) {
             req = req.header("anthropic-beta", beta);
         }
@@ -135,7 +142,8 @@ impl LlmPort for ClaudeProvider {
                 .post(&url)
                 .header("x-api-key", &api_key)
                 .header("anthropic-version", "2023-06-01")
-                .header("content-type", "application/json");
+                .header("content-type", "application/json")
+                .header("anthropic-beta", ANTHROPIC_BETA_PROMPT_CACHING);
             if let Some(ref b) = beta {
                 req = req.header("anthropic-beta", b);
             }
@@ -271,8 +279,10 @@ struct ClaudeRequest {
     model: String,
     messages: Vec<ClaudeMessage>,
     max_tokens: u32,
+    /// System prompt as an array of text blocks, each optionally carrying
+    /// `cache_control` for Anthropic's prompt caching.
     #[serde(skip_serializing_if = "Option::is_none")]
-    system: Option<String>,
+    system: Option<Vec<serde_json::Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f64>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -440,14 +450,59 @@ fn tool_message_to_claude_blocks(content: &Content) -> Vec<serde_json::Value> {
     out
 }
 
+/// Split a system prompt string at the [`SYSTEM_PROMPT_CACHE_BOUNDARY`] marker.
+///
+/// Returns an array of text blocks suitable for the Claude `system` field.
+/// Content before the boundary gets `cache_control: { type: "ephemeral" }`;
+/// content after has no cache_control (changes per session).
+///
+/// If the marker is absent the entire prompt is sent as a single cached block
+/// (backwards-compatible — existing callers that don't insert the marker
+/// still benefit from caching the whole prompt).
+fn split_system_prompt(prompt: &str) -> Vec<serde_json::Value> {
+    if let Some(idx) = prompt.find(SYSTEM_PROMPT_CACHE_BOUNDARY) {
+        let static_part = prompt[..idx].trim();
+        let dynamic_part = prompt[idx + SYSTEM_PROMPT_CACHE_BOUNDARY.len()..].trim();
+
+        let mut blocks = Vec::with_capacity(2);
+        if !static_part.is_empty() {
+            blocks.push(serde_json::json!({
+                "type": "text",
+                "text": static_part,
+                "cache_control": { "type": "ephemeral" }
+            }));
+        }
+        if !dynamic_part.is_empty() {
+            blocks.push(serde_json::json!({
+                "type": "text",
+                "text": dynamic_part,
+            }));
+        }
+        blocks
+    } else if !prompt.is_empty() {
+        // No boundary — cache the whole prompt.
+        vec![serde_json::json!({
+            "type": "text",
+            "text": prompt,
+            "cache_control": { "type": "ephemeral" }
+        })]
+    } else {
+        vec![]
+    }
+}
+
 fn to_claude_request(req: &LlmRequest) -> ClaudeRequest {
-    let mut system: Option<String> = None;
+    let mut system: Option<Vec<serde_json::Value>> = None;
     let mut messages = Vec::new();
 
     for m in &req.messages {
         match m.role {
             LlmRole::System => {
-                system = Some(extract_text(&m.content));
+                let text = extract_text(&m.content);
+                let blocks = split_system_prompt(&text);
+                if !blocks.is_empty() {
+                    system = Some(blocks);
+                }
             }
             LlmRole::User => messages.push(ClaudeMessage {
                 role: "user".into(),
@@ -879,10 +934,36 @@ mod tests {
     fn to_claude_request_extracts_system() {
         let req = sample_request();
         let wire = to_claude_request(&req);
-        assert_eq!(wire.system.as_deref(), Some("You are helpful."));
+        // System is now an array of text blocks with cache_control.
+        let blocks = wire.system.expect("system should be set");
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0]["text"], "You are helpful.");
+        assert_eq!(blocks[0]["cache_control"]["type"], "ephemeral");
         // System message should NOT appear in the messages array
         assert_eq!(wire.messages.len(), 1);
         assert_eq!(wire.messages[0].role, "user");
+    }
+
+    #[test]
+    fn split_system_prompt_with_boundary() {
+        let prompt = format!(
+            "You are a helpful assistant.\n{}\nSession context here.",
+            SYSTEM_PROMPT_CACHE_BOUNDARY
+        );
+        let blocks = split_system_prompt(&prompt);
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0]["text"], "You are a helpful assistant.");
+        assert!(blocks[0].get("cache_control").is_some());
+        assert_eq!(blocks[1]["text"], "Session context here.");
+        assert!(blocks[1].get("cache_control").is_none());
+    }
+
+    #[test]
+    fn split_system_prompt_without_boundary() {
+        let blocks = split_system_prompt("Just a plain prompt.");
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0]["text"], "Just a plain prompt.");
+        assert!(blocks[0].get("cache_control").is_some());
     }
 
     #[test]

@@ -24,7 +24,7 @@ use rusvel_core::config::{
 };
 use rusvel_core::domain::{
     AgentConfig, Content, EventFilter, JobFilter, JobStatus, RUSVEL_META_DEPARTMENT_ID,
-    RUSVEL_META_MODEL_TIER, UserProfile,
+    RUSVEL_META_MODEL_TIER, SYSTEM_PROMPT_CACHE_BOUNDARY, UserProfile,
 };
 use rusvel_core::error::RusvelError;
 use rusvel_core::id::{EventId, SessionId};
@@ -442,6 +442,15 @@ pub async fn dept_chat(
             }
         }
     }
+
+    // ═══ Cache boundary ═══
+    // Everything above is stable per-department (persona, capabilities, agent
+    // override). Everything below is dynamic per-session (rules, context pack,
+    // RAG, chat mode). The Claude adapter splits on this marker and applies
+    // cache_control: { type: "ephemeral" } to the static prefix.
+    resolved
+        .system_prompt
+        .push_str(&format!("\n{SYSTEM_PROMPT_CACHE_BOUNDARY}\n"));
 
     // Load enabled rules and append to system prompt
     let rules = crate::rules::load_rules_for_engine(&state, &dept).await;

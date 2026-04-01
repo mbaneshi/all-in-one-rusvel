@@ -362,14 +362,21 @@ impl AgentRuntime {
         });
 
         // Convert ToolDefinitions to the JSON Schema format LLM providers expect.
+        // Tools marked `searchable` were discovered via tool_search and carry
+        // `defer_loading: true` — the Claude API won't expand their schema into
+        // the context window until the model actually invokes them.
         let tools: Vec<serde_json::Value> = tool_defs
             .iter()
             .map(|t| {
-                serde_json::json!({
+                let mut schema = serde_json::json!({
                     "name": t.name,
                     "description": t.description,
                     "input_schema": t.parameters,
-                })
+                });
+                if t.searchable {
+                    schema["defer_loading"] = serde_json::json!(true);
+                }
+                schema
             })
             .collect();
 

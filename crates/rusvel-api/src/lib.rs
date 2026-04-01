@@ -78,6 +78,7 @@ use rusvel_core::ports::{
 use rusvel_core::registry::DepartmentRegistry;
 use rusvel_cron::CronScheduler;
 use rusvel_db::Database;
+use rusvel_llm::MultiProvider;
 use rusvel_webhook::WebhookReceiver;
 
 /// In-memory TTL cache for [`ContextPack`] assembly (S-045); keyed by session + department id.
@@ -134,8 +135,10 @@ pub struct AppState {
     pub data_dir: std::path::PathBuf,
     /// Effective HTTP bind this process uses (e.g. `127.0.0.1:3000`).
     pub http_listen: String,
-    /// True when Claude is served via `claude -p` at boot (matches `compose_llm_multi` choice).
-    pub claude_transport_cli: bool,
+    /// The multi-provider LLM router; allows hot-swapping providers at runtime.
+    pub llm_multi: Arc<MultiProvider>,
+    /// True when Claude is served via `claude -p` (updated on hot-swap).
+    pub claude_transport_cli: Arc<AtomicBool>,
     /// Snapshot of operator prefs loaded at boot (ObjectStore `system`/`operator_prefs`).
     pub operator_prefs: operator_runtime::OperatorRuntimePrefs,
     /// When set, `POST /api/system/shutdown` signals graceful exit (same channel as Ctrl+C).

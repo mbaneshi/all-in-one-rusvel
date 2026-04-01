@@ -32,14 +32,14 @@ pub fn resolve_claude_cli(pref: &OperatorRuntimePrefs) -> bool {
     }
 }
 
-/// Build the multi-provider stack. Returns `(multi, claude_uses_cli)`.
-pub fn compose_llm_multi(pref: &OperatorRuntimePrefs) -> (MultiProvider, bool) {
+/// Build the multi-provider stack. Returns `(Arc<multi>, claude_uses_cli)`.
+pub fn compose_llm_multi(pref: &OperatorRuntimePrefs) -> (Arc<MultiProvider>, bool) {
     let mut use_cli = resolve_claude_cli(pref);
     if !use_cli && !anthropic_key_present() {
         use_cli = true;
     }
 
-    let mut llm_multi = MultiProvider::new();
+    let llm_multi = MultiProvider::new();
 
     if use_cli {
         tracing::info!(
@@ -82,5 +82,5 @@ pub fn compose_llm_multi(pref: &OperatorRuntimePrefs) -> (MultiProvider, bool) {
         Arc::new(CursorAgentProvider::from_env()),
     );
 
-    (llm_multi, use_cli)
+    (Arc::new(llm_multi), use_cli)
 }

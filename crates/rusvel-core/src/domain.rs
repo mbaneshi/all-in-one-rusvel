@@ -113,6 +113,14 @@ pub enum ModelProvider {
     Other(String),
 }
 
+/// Marker inserted between static (cacheable) and dynamic (per-session)
+/// sections of a system prompt. Content above this boundary is globally
+/// cacheable by the Anthropic API via `cache_control`, content below
+/// changes per session/turn and must not be cached.
+///
+/// Inspired by Claude Code's `__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__`.
+pub const SYSTEM_PROMPT_CACHE_BOUNDARY: &str = "__RUSVEL_CACHE_BOUNDARY__";
+
 /// Request sent to an LLM via [`LlmPort`](crate::ports::LlmPort).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmRequest {
