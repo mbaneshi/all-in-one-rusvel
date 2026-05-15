@@ -235,6 +235,7 @@ sse_helpers (crate-internal), system, terminal, visual_report, webhooks, workflo
 ## Claude Code Tooling
 
 Custom agents, skills, and rules in `.claude/`. See `docs/claude-code-tooling.md` for details.
+For multi-tab parallel orchestration (Claude flags, zellij actions, gh project, the `scripts/orchestrate.sh` helper), see [`docs/contributing/orchestration-toolkit.md`](docs/contributing/orchestration-toolkit.md).
 
 **Subagents** (`@name` to invoke):
 - `@researcher` — research crates, patterns, LLM integrations before implementation
