@@ -8,29 +8,47 @@
 
 ## 1. Quick-start: spawn N parallel workstreams
 
-From the lead pane:
+Use `scripts/orchestrate.sh spawn` — it bundles the right flags and the
+autonomous-mode system prompt for you:
 
 ```bash
 # Rename the current tab so we can return to it
 zellij action rename-tab "lead"
 
-# Spawn a new tab with a Claude session that auto-creates its worktree
-# and bypasses permission prompts for edits (still asks for destructive ops).
+# Default = autonomous: --dangerously-skip-permissions + GitHub-issue-as-channel
+./scripts/orchestrate.sh spawn opt-D feat/llm-real-streaming \
+  "Work on https://github.com/mbaneshi/rusvel/issues/7 — read it with gh, ship the PR autonomously. Post status updates on the issue."
+
+# Supervised = acceptEdits + you babysit (Bash still prompts)
+./scripts/orchestrate.sh spawn opt-D feat/llm-real-streaming \
+  "...prompt..." --supervised
+```
+
+### Two modes
+
+| Mode | Flag combo | When to use | Risk |
+|---|---|---|---|
+| **autonomous** (default) | `--dangerously-skip-permissions` + appended system prompt directing the spawned Claude to post status/blockers via `gh issue comment` | You want the tab to run hands-off and report back via durable GitHub artifacts. Trusted local dev only. | Full tool bypass — never use on a host with sensitive credentials or network access to prod. |
+| **supervised** | `--permission-mode acceptEdits` | You plan to watch the tab and approve Bash. Slower, but a human sees every shell call. | Bash still prompts; you must stay in the loop. |
+
+### Raw equivalent
+
+If you'd rather skip the script, the raw command behind autonomous mode is:
+
+```bash
 zellij action new-tab --cwd /home/shahab/rusvel --name "opt-D"
-zellij action write-chars 'claude --worktree feat/llm-real-streaming --permission-mode acceptEdits --name "opt-D streaming" "Work on https://github.com/mbaneshi/rusvel/issues/7. Read it with gh, ship the PR autonomously."'
-zellij action write 13   # Enter
-
-# Repeat for each workstream...
-
-# Return to the lead
+zellij action write-chars 'claude --dangerously-skip-permissions --worktree feat/llm-real-streaming --name opt-D --append-system-prompt "You are operating autonomously in your own zellij tab and git worktree. Coordinate via GitHub: gh issue comment <N> on start, blockers, decisions, milestones. Under 5 lines, action-oriented. Trusted local dev." "Work on https://github.com/mbaneshi/rusvel/issues/7 — ship the PR autonomously."'
+zellij action write 13
 zellij action go-to-tab-name "lead"
 ```
 
 **Critical flags:**
 
-- `--worktree <name>` — Claude creates a git worktree under `~/.claude/worktrees/<name>` and runs the session inside it. No manual `git worktree add`.
-- `--permission-mode acceptEdits` — Edits/Writes auto-approved; Bash still prompts. For full autonomy use `bypassPermissions` (only in sandboxed/trusted environments).
-- `--name "<label>"` — Visible in `/resume` picker, terminal title, and the prompt box. Use for human-readable tab labels.
+- `--worktree <name>` — Claude creates a git worktree under `~/.claude/worktrees/<name>`. No manual `git worktree add`.
+- `--dangerously-skip-permissions` — Aliased by `--permission-mode bypassPermissions`. Fully autonomous. **Trusted local dev only.**
+- `--permission-mode acceptEdits` — Edits/Writes auto-approved; Bash still prompts. Safer middle ground.
+- `--name "<label>"` — Visible in `/resume` picker, terminal title, prompt box. Use as the tab label.
+- `--append-system-prompt "<text>"` — Adds to the default system prompt without replacing it. Good place to inject the "report via gh issue comment" contract.
 
 ---
 

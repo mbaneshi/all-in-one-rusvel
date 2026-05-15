@@ -45,19 +45,39 @@ return_to_lead() {
 }
 
 cmd_spawn() {
-  [[ $# -ge 3 ]] || die "spawn: need <tab-name> <branch> <prompt>"
+  [[ $# -ge 3 ]] || die "spawn: need <tab-name> <branch> <prompt> [--supervised]"
   local name="$1" branch="$2" prompt="$3"
+  local mode="${4:-}"   # pass --supervised to opt into acceptEdits + prompts
   require zellij claude
-  zellij action new-tab --cwd "$REPO_DIR" --name "$name"
+  # Avoid `new-tab --cwd ... --name ...` — zellij 0.41 requires --layout when
+  # --cwd is set alongside --name. Skip --cwd and cd inside the spawned shell.
+  zellij action new-tab --name "$name"
   sleep 0.5
-  # Wrap prompt for safe shell-in-shell. Use printf %q on the prompt only.
-  local q_prompt
+  local perm_args sys_prompt
+  if [[ "$mode" == "--supervised" ]]; then
+    # Supervised mode: edits auto-accept, Bash still prompts. Use when you
+    # plan to babysit the tab.
+    perm_args="--permission-mode acceptEdits"
+    sys_prompt=""
+  else
+    # Autonomous mode (default): full bypass + GitHub-issue-as-channel.
+    # The spawned Claude posts blockers/milestones to its issue instead
+    # of stalling on prompts. Trusted local dev only.
+    perm_args="--dangerously-skip-permissions"
+    sys_prompt='You are operating autonomously in your own zellij tab and git worktree. Coordinate with the human via GitHub: use `gh issue comment <N>` (or `gh pr comment <N>`) to post brief status updates on the relevant issue when you (a) start work, (b) hit a decision point or blocker that needs human input, (c) make a non-trivial architectural choice, (d) complete a milestone. Keep comments under 5 lines, action-oriented. Do not block waiting for permission prompts — proceed with the work and report results via GitHub. The host is a trusted local dev environment.'
+  fi
+  local q_prompt q_sys
   q_prompt=$(printf '%q' "$prompt")
-  zellij action write-chars "claude --worktree ${branch} --permission-mode acceptEdits --name ${name} ${q_prompt}"
+  if [[ -n "$sys_prompt" ]]; then
+    q_sys="--append-system-prompt $(printf '%q' "$sys_prompt") "
+  else
+    q_sys=""
+  fi
+  zellij action write-chars "cd $(printf '%q' "$REPO_DIR") && claude ${perm_args} --worktree ${branch} --name ${name} ${q_sys}${q_prompt}"
   zellij action write 13
   sleep 0.3
   return_to_lead
-  echo "spawned tab '$name' on branch '$branch'"
+  echo "spawned tab '$name' on branch '$branch' (${mode:-autonomous})"
 }
 
 cmd_status() {
