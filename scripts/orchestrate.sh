@@ -10,6 +10,7 @@
 #   orchestrate.sh tabs                                 list all zellij tab names
 #   orchestrate.sh close <tab-name>                     go to tab, close it, return to lead
 #   orchestrate.sh prs                                  watch new PRs in a loop until Ctrl-C
+#   orchestrate.sh comments [interval] [issues...]      watch issue comments; default 30s on #5-#8
 #   orchestrate.sh help                                 this message
 #
 # Env overrides:
@@ -176,6 +177,40 @@ cmd_close() {
   echo "closed tab '$tab'"
 }
 
+cmd_comments() {
+  # comments [interval] [issues...]   poll issue comments and emit one line per new one.
+  # Default interval: 30s. Default issues: 5 6 7 8 (audit children).
+  require gh jq
+  local interval="${1:-30}"; shift || true
+  local issues=("$@")
+  if [[ ${#issues[@]} -eq 0 ]]; then
+    issues=(5 6 7 8)
+  fi
+  local state="/tmp/orch-seen-comments.txt"
+  : > "$state"
+  # Prime state with currently existing comment ids so we don't re-emit history.
+  for n in "${issues[@]}"; do
+    gh api "/repos/$REPO/issues/$n/comments" --jq '.[].id' 2>/dev/null \
+      | awk -v n="$n" '{print n"-"$1}' >> "$state" || true
+  done
+  echo "$(date '+%T') comments-watch armed: $REPO #${issues[*]} every ${interval}s (state: $state)"
+  while true; do
+    for n in "${issues[@]}"; do
+      gh api "/repos/$REPO/issues/$n/comments" \
+        --jq '.[] | "\(.id)\t\(.user.login)\t\(.created_at)\t" + ((.body // "") | gsub("[\r\n]+"; " | ") | .[0:160])' 2>/dev/null \
+        | while IFS=$'\t' read -r cid user when body; do
+            [[ -z "$cid" ]] && continue
+            key="$n-$cid"
+            if ! grep -qx -- "$key" "$state" 2>/dev/null; then
+              printf '%s  #%s  @%s  %s  %s\n' "$(date '+%T')" "$n" "$user" "$when" "$body"
+              echo "$key" >> "$state"
+            fi
+          done || true
+    done
+    sleep "$interval"
+  done
+}
+
 cmd_help() {
   sed -n '2,30p' "$0"
 }
@@ -183,14 +218,15 @@ cmd_help() {
 main() {
   local sub="${1:-help}"; shift || true
   case "$sub" in
-    spawn)  cmd_spawn  "$@" ;;
-    status) cmd_status "$@" ;;
-    watch)  cmd_watch  "$@" ;;
-    prs)    cmd_prs    "$@" ;;
-    dump)   cmd_dump   "$@" ;;
-    nudge)  cmd_nudge  "$@" ;;
-    tabs)   cmd_tabs   "$@" ;;
-    close)  cmd_close  "$@" ;;
+    spawn)    cmd_spawn    "$@" ;;
+    status)   cmd_status   "$@" ;;
+    watch)    cmd_watch    "$@" ;;
+    prs)      cmd_prs      "$@" ;;
+    comments) cmd_comments "$@" ;;
+    dump)     cmd_dump     "$@" ;;
+    nudge)    cmd_nudge    "$@" ;;
+    tabs)     cmd_tabs     "$@" ;;
+    close)    cmd_close    "$@" ;;
     help|-h|--help) cmd_help ;;
     *) die "unknown subcommand: $sub (try: help)" ;;
   esac
