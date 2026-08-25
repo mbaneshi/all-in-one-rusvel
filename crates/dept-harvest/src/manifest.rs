@@ -89,7 +89,7 @@ pub fn harvest_manifest() -> DepartmentManifest {
                 }),
             },
             ToolContribution {
-                name: "harvest.score".into(),
+                name: "harvest.opportunity.score".into(),
                 description: "Re-score an opportunity".into(),
                 parameters_schema: serde_json::json!({
                     "type": "object",
@@ -101,7 +101,7 @@ pub fn harvest_manifest() -> DepartmentManifest {
                 }),
             },
             ToolContribution {
-                name: "harvest.proposal".into(),
+                name: "harvest.proposal.generate".into(),
                 description: "Generate a proposal for an opportunity".into(),
                 parameters_schema: serde_json::json!({
                     "type": "object",
@@ -121,8 +121,8 @@ pub fn harvest_manifest() -> DepartmentManifest {
             default_model: "sonnet".into(),
             allowed_tools: vec![
                 "harvest.scan".into(),
-                "harvest.score".into(),
-                "harvest.proposal".into(),
+                "harvest.opportunity.score".into(),
+                "harvest.proposal.generate".into(),
                 "web_search".into(),
             ],
         }],
@@ -235,8 +235,8 @@ mod tests {
         let m = harvest_manifest();
         assert_eq!(m.tools.len(), 3);
         assert_eq!(m.tools[0].name, "harvest.scan");
-        assert_eq!(m.tools[1].name, "harvest.score");
-        assert_eq!(m.tools[2].name, "harvest.proposal");
+        assert_eq!(m.tools[1].name, "harvest.opportunity.score");
+        assert_eq!(m.tools[2].name, "harvest.proposal.generate");
     }
 
     #[test]
