@@ -34,9 +34,9 @@ fn model_for_tier(base: &ModelRef, tier: ModelTier) -> ModelRef {
 
 fn claude_model_id(tier: ModelTier) -> &'static str {
     match tier {
-        ModelTier::Fast => "claude-haiku-4-20250414",
-        ModelTier::Balanced => "claude-sonnet-4-20250514",
-        ModelTier::Premium => "claude-opus-4-20250514",
+        ModelTier::Fast => "claude-haiku-4-5",
+        ModelTier::Balanced => "claude-sonnet-5",
+        ModelTier::Premium => "claude-opus-5",
     }
 }
 
@@ -58,7 +58,7 @@ mod tests {
         let req = LlmRequest {
             model: ModelRef {
                 provider: ModelProvider::Claude,
-                model: "claude-sonnet-4-20250514".into(),
+                model: "claude-sonnet-5".into(),
             },
             messages: vec![],
             tools: vec![],
@@ -77,7 +77,7 @@ mod tests {
         let req = LlmRequest {
             model: ModelRef {
                 provider: ModelProvider::Claude,
-                model: "claude-sonnet-4-20250514".into(),
+                model: "claude-sonnet-5".into(),
             },
             messages: vec![],
             tools: vec![],
@@ -86,6 +86,6 @@ mod tests {
             metadata: serde_json::json!({}),
         };
         let out = apply_model_tier(req);
-        assert_eq!(out.model.model, "claude-sonnet-4-20250514");
+        assert_eq!(out.model.model, "claude-sonnet-5");
     }
 }

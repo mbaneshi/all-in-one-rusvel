@@ -43,7 +43,7 @@ impl ClaudeCliProvider {
             command: "claude".into(),
             use_subscription: true,
             api_key: None,
-            model: "claude-sonnet-4-20250514".into(),
+            model: "claude-sonnet-5".into(),
             timeout_secs: 300,
         }
     }
@@ -54,7 +54,7 @@ impl ClaudeCliProvider {
             command: "claude".into(),
             use_subscription: false,
             api_key: Some(api_key.into()),
-            model: "claude-sonnet-4-20250514".into(),
+            model: "claude-sonnet-5".into(),
             timeout_secs: 300,
         }
     }
@@ -150,6 +150,7 @@ impl LlmPort for ClaudeCliProvider {
             cmd.arg("--max-turns").arg(max.to_string());
         }
 
+        // TODO: fragile undocumented env vars (see module-level caveat).
         if self.use_subscription {
             cmd.env_remove("ANTHROPIC_API_KEY");
             cmd.env_remove("CLAUDECODE");
@@ -342,6 +343,7 @@ impl LlmPort for ClaudeCliProvider {
         }
 
         // Env var setup for Max subscription.
+        // TODO: fragile undocumented env vars (see module-level caveat).
         if self.use_subscription {
             cmd.env_remove("ANTHROPIC_API_KEY");
             cmd.env_remove("CLAUDECODE"); // avoid recursion detection
@@ -439,7 +441,7 @@ mod tests {
         LlmRequest {
             model: ModelRef {
                 provider: ModelProvider::Claude,
-                model: "claude-sonnet-4-20250514".into(),
+                model: "claude-sonnet-5".into(),
             },
             messages: vec![
                 LlmMessage {
@@ -580,10 +582,10 @@ mod tests {
     fn builder_methods() {
         let provider = ClaudeCliProvider::max_subscription()
             .command("/usr/local/bin/claude")
-            .model("claude-opus-4-20250514")
+            .model("claude-opus-5")
             .timeout_secs(600);
         assert_eq!(provider.command, "/usr/local/bin/claude");
-        assert_eq!(provider.model, "claude-opus-4-20250514");
+        assert_eq!(provider.model, "claude-opus-5");
         assert_eq!(provider.timeout_secs, 600);
     }
 }

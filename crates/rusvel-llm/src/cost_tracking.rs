@@ -42,7 +42,7 @@ impl CostTrackingLlm {
             return;
         };
         let req_for_cost = effective_request_for_cost(req, resp);
-        let mut usd = estimate_llm_cost_usd(
+        let mut usd = estimate_cost_usd(
             &req_for_cost.model.provider,
             &req_for_cost.model.model,
             &resp.usage,
@@ -131,6 +131,38 @@ impl CostTrackingLlm {
             tracing::warn!(error = %e, "metric store record_cost failed");
         }
     }
+}
+
+/// Per-MTok list prices (input, output) for current Claude models.
+///
+/// The shared [`estimate_llm_cost_usd`] table in `rusvel-core` predates the
+/// Claude 5 generation, so current model ids are priced here; anything not
+/// matched (historical cost records, other providers) falls through to the
+/// shared estimator. Cache reads (~0.1x input) and writes (~1.25x input) are
+/// not modeled because [`LlmUsage`] does not carry cache token counts.
+fn claude_5_gen_rates(model: &str) -> Option<(f64, f64)> {
+    let m = model.to_ascii_lowercase();
+    if m.starts_with("claude-opus-5") {
+        Some((5.0, 25.0))
+    } else if m.starts_with("claude-sonnet-5") {
+        Some((3.0, 15.0))
+    } else if m.starts_with("claude-haiku-4-5") {
+        Some((1.0, 5.0))
+    } else {
+        None
+    }
+}
+
+/// USD estimate for a call: current Claude pricing, else the shared estimator.
+fn estimate_cost_usd(provider: &ModelProvider, model: &str, usage: &LlmUsage) -> f64 {
+    if *provider == ModelProvider::Claude {
+        if let Some((inp, outp)) = claude_5_gen_rates(model) {
+            let in_m = f64::from(usage.input_tokens) / 1_000_000.0;
+            let out_m = f64::from(usage.output_tokens) / 1_000_000.0;
+            return inp * in_m + outp * out_m;
+        }
+    }
+    estimate_llm_cost_usd(provider, model, usage)
 }
 
 fn effective_request_for_cost(req: &LlmRequest, resp: &LlmResponse) -> LlmRequest {
@@ -335,7 +367,7 @@ mod tests {
         let req = LlmRequest {
             model: ModelRef {
                 provider: ModelProvider::Claude,
-                model: "claude-sonnet-4-20250514".into(),
+                model: "claude-sonnet-5".into(),
             },
             messages: vec![],
             tools: vec![],
@@ -384,7 +416,7 @@ mod tests {
         let req = LlmRequest {
             model: ModelRef {
                 provider: ModelProvider::Claude,
-                model: "claude-sonnet-4-20250514".into(),
+                model: "claude-sonnet-5".into(),
             },
             messages: vec![],
             tools: vec![],
@@ -421,7 +453,7 @@ mod tests {
                     "row-1",
                     ModelRef {
                         provider: ModelProvider::Claude,
-                        model: "claude-sonnet-4-20250514".into(),
+                        model: "claude-sonnet-5".into(),
                     },
                     LlmResponse {
                         content: Content::text("batch ok"),
@@ -456,9 +488,9 @@ mod tests {
 
         let pts = metrics.points.lock().unwrap();
         assert_eq!(pts.len(), 1);
-        let sync_usd = estimate_llm_cost_usd(
+        let sync_usd = estimate_cost_usd(
             &ModelProvider::Claude,
-            "claude-sonnet-4-20250514",
+            "claude-sonnet-5",
             &LlmUsage {
                 input_tokens: 1_000_000,
                 output_tokens: 0,
@@ -467,5 +499,23 @@ mod tests {
         let expected = sync_usd * LLM_BATCH_COST_MULTIPLIER;
         assert!((pts[0].value - expected).abs() < 1e-9);
         assert!(pts[0].tags.iter().any(|t| t == "batch:true"));
+    }
+
+    #[test]
+    fn claude_5_gen_pricing_per_mtok() {
+        let usage = LlmUsage {
+            input_tokens: 1_000_000,
+            output_tokens: 1_000_000,
+        };
+        let opus = estimate_cost_usd(&ModelProvider::Claude, "claude-opus-5", &usage);
+        assert!((opus - 30.0).abs() < 1e-9); // $5 in + $25 out
+        let sonnet = estimate_cost_usd(&ModelProvider::Claude, "claude-sonnet-5", &usage);
+        assert!((sonnet - 18.0).abs() < 1e-9); // $3 in + $15 out
+        let haiku = estimate_cost_usd(&ModelProvider::Claude, "claude-haiku-4-5", &usage);
+        assert!((haiku - 6.0).abs() < 1e-9); // $1 in + $5 out
+        // Historical model ids fall through to the shared estimator.
+        let legacy = estimate_cost_usd(&ModelProvider::Claude, "claude-opus-4-20250514", &usage);
+        let shared = estimate_llm_cost_usd(&ModelProvider::Claude, "claude-opus-4-20250514", &usage);
+        assert!((legacy - shared).abs() < 1e-9);
     }
 }
