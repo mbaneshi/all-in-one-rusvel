@@ -1046,6 +1046,12 @@ async fn main() -> Result<()> {
 
     // 4. Concrete adapters
     let db: Arc<Database> = Arc::new(Database::open(data_dir.join("rusvel.db"))?);
+    // Recover jobs left `Running` by a prior shutdown and prune finished jobs
+    // past the default retention (rusvel-jobs::PersistentJobQueue, ADR-003).
+    match rusvel_jobs::PersistentJobQueue::from_database((*db).clone()) {
+        Ok(_) => tracing::info!("Job queue recovery + retention sweep complete"),
+        Err(e) => tracing::warn!("Job queue recovery failed: {e}"),
+    }
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     let reexec_pending = Arc::new(AtomicBool::new(false));
     let storage_for_boot: Arc<dyn rusvel_core::ports::StoragePort> = db.clone();

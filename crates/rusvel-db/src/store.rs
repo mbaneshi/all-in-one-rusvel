@@ -194,7 +194,9 @@ pub struct CostEventsSpendSnapshot {
 }
 
 /// Thread-safe via an internal `Mutex<Connection>`. For the single-writer
-/// nature of `SQLite` this is the simplest correct approach.
+/// nature of `SQLite` this is the simplest correct approach. `Clone` is
+/// cheap — clones share the same underlying connection.
+#[derive(Clone)]
 pub struct Database {
     conn: Arc<Mutex<Connection>>,
 }

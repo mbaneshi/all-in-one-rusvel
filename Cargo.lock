@@ -6494,6 +6494,7 @@ dependencies = [
  "rusvel-embed",
  "rusvel-engine-tools",
  "rusvel-event",
+ "rusvel-jobs",
  "rusvel-llm",
  "rusvel-mcp",
  "rusvel-memory",

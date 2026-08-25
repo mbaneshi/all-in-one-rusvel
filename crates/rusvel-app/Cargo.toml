@@ -14,6 +14,7 @@ path = "src/main.rs"
 # ─── Foundation ───
 rusvel-core   = { workspace = true }
 rusvel-db     = { workspace = true }
+rusvel-jobs   = { workspace = true }
 rusvel-llm    = { workspace = true }
 rusvel-agent  = { workspace = true }
 rusvel-event  = { workspace = true }
