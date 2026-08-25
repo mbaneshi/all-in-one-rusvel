@@ -179,11 +179,7 @@ impl LlmPort for ClaudeProvider {
                 return;
             }
 
-            let mut full_text = String::new();
-            let mut input_tokens: u32 = 0;
-            let mut output_tokens: u32 = 0;
-            let mut cache_creation_input_tokens: u64 = 0;
-            let mut cache_read_input_tokens: u64 = 0;
+            let mut acc = ClaudeStreamAccumulator::default();
             let mut buf = String::new();
             let mut stream = http_resp.bytes_stream();
 
@@ -208,59 +204,16 @@ impl LlmPort for ClaudeProvider {
                         let Ok(ev) = serde_json::from_str::<serde_json::Value>(data) else {
                             continue;
                         };
-                        let typ = ev.get("type").and_then(|t| t.as_str());
-                        if typ == Some("content_block_delta") {
-                            if let Some(delta) = ev.get("delta") {
-                                if delta.get("type").and_then(|t| t.as_str()) == Some("text_delta")
-                                {
-                                    if let Some(text) = delta.get("text").and_then(|t| t.as_str()) {
-                                        full_text.push_str(text);
-                                        let _ =
-                                            tx.send(LlmStreamEvent::Delta(text.to_string())).await;
-                                    }
-                                }
-                            }
-                        } else if typ == Some("message_delta") {
-                            if let Some(u) = ev.get("usage") {
-                                if let Some(ot) = u.get("output_tokens").and_then(|v| v.as_u64()) {
-                                    output_tokens = ot as u32;
-                                }
-                            }
-                        } else if typ == Some("message_start") {
-                            if let Some(u) = ev.get("message").and_then(|m| m.get("usage")) {
-                                if let Some(it) = u.get("input_tokens").and_then(|v| v.as_u64()) {
-                                    input_tokens = it as u32;
-                                }
-                                if let Some(cc) = u
-                                    .get("cache_creation_input_tokens")
-                                    .and_then(|v| v.as_u64())
-                                {
-                                    cache_creation_input_tokens = cc;
-                                }
-                                if let Some(cr) =
-                                    u.get("cache_read_input_tokens").and_then(|v| v.as_u64())
-                                {
-                                    cache_read_input_tokens = cr;
-                                }
+                        for out in acc.handle_event(&ev) {
+                            if tx.send(out).await.is_err() {
+                                return;
                             }
                         }
                     }
                 }
             }
 
-            let done = LlmResponse {
-                content: Content::text(&full_text),
-                finish_reason: FinishReason::Stop,
-                usage: LlmUsage {
-                    input_tokens,
-                    output_tokens,
-                },
-                metadata: serde_json::json!({
-                    "cache_creation_input_tokens": cache_creation_input_tokens,
-                    "cache_read_input_tokens": cache_read_input_tokens,
-                }),
-            };
-            let _ = tx.send(LlmStreamEvent::Done(done)).await;
+            let _ = tx.send(LlmStreamEvent::Done(acc.into_response())).await;
         });
 
         Ok(rx)
@@ -348,6 +301,217 @@ struct ClaudeUsage {
     /// Tokens served from the prompt cache (~0.1x input price).
     #[serde(default)]
     cache_read_input_tokens: u64,
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  Streaming accumulator
+// ════════════════════════════════════════════════════════════════════
+
+/// One in-flight content block from a Claude SSE stream, keyed by block index.
+enum StreamBlock {
+    Text(String),
+    ToolUse {
+        id: String,
+        name: String,
+        partial_json: String,
+    },
+    /// Blocks we do not surface (e.g. `thinking`).
+    Ignored,
+}
+
+/// Accumulates Claude streaming SSE events into [`LlmStreamEvent`]s and a
+/// final [`LlmResponse`].
+///
+/// Tracks content blocks by index (`text` and `tool_use`), the terminal
+/// `stop_reason` from `message_delta`, and usage counters. Historically the
+/// stream path dropped `tool_use` blocks and hardcoded
+/// [`FinishReason::Stop`], which made agent runs that ended in a tool call
+/// (or truncation) look like clean empty completions (#12).
+#[derive(Default)]
+struct ClaudeStreamAccumulator {
+    blocks: std::collections::BTreeMap<u64, StreamBlock>,
+    stop_reason: Option<String>,
+    input_tokens: u32,
+    output_tokens: u32,
+    cache_creation_input_tokens: u64,
+    cache_read_input_tokens: u64,
+}
+
+impl ClaudeStreamAccumulator {
+    /// Process one parsed SSE `data:` JSON event, returning events to forward.
+    fn handle_event(&mut self, ev: &serde_json::Value) -> Vec<LlmStreamEvent> {
+        let mut out = Vec::new();
+        let index = ev.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
+        match ev.get("type").and_then(|t| t.as_str()) {
+            Some("content_block_start") => {
+                let block = ev.get("content_block");
+                let ty = block
+                    .and_then(|b| b.get("type"))
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("");
+                let entry = match ty {
+                    "text" => StreamBlock::Text(
+                        block
+                            .and_then(|b| b.get("text"))
+                            .and_then(|t| t.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                    ),
+                    "tool_use" | "server_tool_use" => StreamBlock::ToolUse {
+                        id: block
+                            .and_then(|b| b.get("id"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        name: block
+                            .and_then(|b| b.get("name"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        partial_json: String::new(),
+                    },
+                    _ => StreamBlock::Ignored,
+                };
+                self.blocks.insert(index, entry);
+            }
+            Some("content_block_delta") => {
+                let delta = ev.get("delta");
+                match delta.and_then(|d| d.get("type")).and_then(|t| t.as_str()) {
+                    Some("text_delta") => {
+                        if let Some(text) = delta.and_then(|d| d.get("text")).and_then(|t| t.as_str())
+                        {
+                            match self
+                                .blocks
+                                .entry(index)
+                                .or_insert_with(|| StreamBlock::Text(String::new()))
+                            {
+                                StreamBlock::Text(t) => t.push_str(text),
+                                _ => {}
+                            }
+                            out.push(LlmStreamEvent::Delta(text.to_string()));
+                        }
+                    }
+                    Some("input_json_delta") => {
+                        if let Some(pj) = delta
+                            .and_then(|d| d.get("partial_json"))
+                            .and_then(|t| t.as_str())
+                        {
+                            if let Some(StreamBlock::ToolUse { partial_json, .. }) =
+                                self.blocks.get_mut(&index)
+                            {
+                                partial_json.push_str(pj);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Some("content_block_stop") => {
+                if let Some(StreamBlock::ToolUse {
+                    id,
+                    name,
+                    partial_json,
+                }) = self.blocks.get(&index)
+                {
+                    out.push(LlmStreamEvent::ToolUse {
+                        id: id.clone(),
+                        name: name.clone(),
+                        args: parse_tool_input_json(partial_json),
+                    });
+                }
+            }
+            Some("message_delta") => {
+                if let Some(sr) = ev
+                    .get("delta")
+                    .and_then(|d| d.get("stop_reason"))
+                    .and_then(|v| v.as_str())
+                {
+                    self.stop_reason = Some(sr.to_string());
+                }
+                if let Some(u) = ev.get("usage") {
+                    if let Some(ot) = u.get("output_tokens").and_then(|v| v.as_u64()) {
+                        self.output_tokens = ot as u32;
+                    }
+                    // Some gateways (e.g. Bedrock-backed proxies) only report
+                    // input_tokens here rather than in message_start.
+                    if let Some(it) = u.get("input_tokens").and_then(|v| v.as_u64()) {
+                        self.input_tokens = it as u32;
+                    }
+                }
+            }
+            Some("message_start") => {
+                if let Some(u) = ev.get("message").and_then(|m| m.get("usage")) {
+                    if let Some(it) = u.get("input_tokens").and_then(|v| v.as_u64()) {
+                        self.input_tokens = it as u32;
+                    }
+                    if let Some(cc) = u.get("cache_creation_input_tokens").and_then(|v| v.as_u64())
+                    {
+                        self.cache_creation_input_tokens = cc;
+                    }
+                    if let Some(cr) = u.get("cache_read_input_tokens").and_then(|v| v.as_u64()) {
+                        self.cache_read_input_tokens = cr;
+                    }
+                }
+            }
+            _ => {}
+        }
+        out
+    }
+
+    /// Build the aggregated terminal [`LlmResponse`].
+    fn into_response(self) -> LlmResponse {
+        let mut parts = Vec::new();
+        let mut has_tool_call = false;
+        for (_, block) in self.blocks {
+            match block {
+                StreamBlock::Text(t) => {
+                    if !t.is_empty() {
+                        parts.push(Part::Text(t));
+                    }
+                }
+                StreamBlock::ToolUse {
+                    id,
+                    name,
+                    partial_json,
+                } => {
+                    has_tool_call = true;
+                    parts.push(Part::ToolCall {
+                        id,
+                        name,
+                        args: parse_tool_input_json(&partial_json),
+                    });
+                }
+                StreamBlock::Ignored => {}
+            }
+        }
+        // A missing stop_reason (e.g. truncated stream) falls back on the
+        // shape of the content so tool calls are never mistaken for Stop.
+        let finish_reason = match self.stop_reason.as_deref() {
+            Some(sr) => finish_reason_from_stop(sr),
+            None if has_tool_call => FinishReason::ToolUse,
+            None => FinishReason::Stop,
+        };
+        LlmResponse {
+            content: Content { parts },
+            finish_reason,
+            usage: LlmUsage {
+                input_tokens: self.input_tokens,
+                output_tokens: self.output_tokens,
+            },
+            metadata: serde_json::json!({
+                "cache_creation_input_tokens": self.cache_creation_input_tokens,
+                "cache_read_input_tokens": self.cache_read_input_tokens,
+            }),
+        }
+    }
+}
+
+/// Parse accumulated `input_json_delta` fragments; empty input means `{}`.
+fn parse_tool_input_json(partial_json: &str) -> serde_json::Value {
+    if partial_json.trim().is_empty() {
+        return serde_json::json!({});
+    }
+    serde_json::from_str(partial_json).unwrap_or_else(|_| serde_json::json!({}))
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -600,10 +764,7 @@ fn from_claude_response(resp: ClaudeResponse) -> LlmResponse {
     }
 
     let finish_reason = match resp.stop_reason.as_deref() {
-        Some("end_turn" | "stop") => FinishReason::Stop,
-        Some("max_tokens") => FinishReason::Length,
-        Some("tool_use") => FinishReason::ToolUse,
-        Some(other) => FinishReason::Other(other.into()),
+        Some(sr) => finish_reason_from_stop(sr),
         None => FinishReason::Other("unknown".into()),
     };
 
@@ -618,6 +779,16 @@ fn from_claude_response(resp: ClaudeResponse) -> LlmResponse {
             "cache_creation_input_tokens": resp.usage.cache_creation_input_tokens,
             "cache_read_input_tokens": resp.usage.cache_read_input_tokens,
         }),
+    }
+}
+
+/// Map a Claude `stop_reason` string to a [`FinishReason`].
+fn finish_reason_from_stop(stop_reason: &str) -> FinishReason {
+    match stop_reason {
+        "end_turn" | "stop" => FinishReason::Stop,
+        "max_tokens" => FinishReason::Length,
+        "tool_use" => FinishReason::ToolUse,
+        other => FinishReason::Other(other.into()),
     }
 }
 
@@ -1194,6 +1365,135 @@ mod tests {
         let models = rt.block_on(provider.list_models()).unwrap();
         assert!(models.len() >= 3);
         assert!(models.iter().all(|m| m.provider == ModelProvider::Claude));
+    }
+
+    // ── Streaming accumulator (#12: dept chat empty output) ──────
+
+    fn feed(acc: &mut ClaudeStreamAccumulator, evs: &[serde_json::Value]) -> Vec<LlmStreamEvent> {
+        let mut out = Vec::new();
+        for ev in evs {
+            out.extend(acc.handle_event(ev));
+        }
+        out
+    }
+
+    #[test]
+    fn stream_accumulator_text_flow() {
+        let mut acc = ClaudeStreamAccumulator::default();
+        let emitted = feed(
+            &mut acc,
+            &[
+                serde_json::json!({"type": "message_start", "message": {"usage": {"input_tokens": 12}}}),
+                serde_json::json!({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}),
+                serde_json::json!({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hello "}}),
+                serde_json::json!({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "world"}}),
+                serde_json::json!({"type": "content_block_stop", "index": 0}),
+                serde_json::json!({"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 7}}),
+            ],
+        );
+        let deltas: Vec<&str> = emitted
+            .iter()
+            .filter_map(|e| match e {
+                LlmStreamEvent::Delta(t) => Some(t.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(deltas, vec!["Hello ", "world"]);
+
+        let resp = acc.into_response();
+        assert_eq!(resp.finish_reason, FinishReason::Stop);
+        assert_eq!(resp.usage.input_tokens, 12);
+        assert_eq!(resp.usage.output_tokens, 7);
+        match &resp.content.parts[0] {
+            Part::Text(t) => assert_eq!(t, "Hello world"),
+            other => panic!("expected text, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn stream_accumulator_tool_use_flow() {
+        // A run that ends in a tool call must surface the ToolCall part and
+        // FinishReason::ToolUse — previously it produced an empty Stop
+        // response, which the agent loop reported as a clean completion.
+        let mut acc = ClaudeStreamAccumulator::default();
+        let emitted = feed(
+            &mut acc,
+            &[
+                serde_json::json!({"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use", "id": "toolu_1", "name": "finance_add_entry", "input": {}}}),
+                serde_json::json!({"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": "{\"amount_usd\":"}}),
+                serde_json::json!({"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": "50}"}}),
+                serde_json::json!({"type": "content_block_stop", "index": 0}),
+                serde_json::json!({"type": "message_delta", "delta": {"stop_reason": "tool_use"}, "usage": {"output_tokens": 40}}),
+            ],
+        );
+        match emitted.last() {
+            Some(LlmStreamEvent::ToolUse { id, name, args }) => {
+                assert_eq!(id, "toolu_1");
+                assert_eq!(name, "finance_add_entry");
+                assert_eq!(args, &serde_json::json!({"amount_usd": 50}));
+            }
+            other => panic!("expected ToolUse event, got {other:?}"),
+        }
+
+        let resp = acc.into_response();
+        assert_eq!(resp.finish_reason, FinishReason::ToolUse);
+        match &resp.content.parts[0] {
+            Part::ToolCall { id, name, args } => {
+                assert_eq!(id, "toolu_1");
+                assert_eq!(name, "finance_add_entry");
+                assert_eq!(args, &serde_json::json!({"amount_usd": 50}));
+            }
+            other => panic!("expected ToolCall part, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn stream_accumulator_thinking_then_tool_use_preserves_order() {
+        let mut acc = ClaudeStreamAccumulator::default();
+        feed(
+            &mut acc,
+            &[
+                serde_json::json!({"type": "content_block_start", "index": 0, "content_block": {"type": "thinking"}}),
+                serde_json::json!({"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "hmm"}}),
+                serde_json::json!({"type": "content_block_stop", "index": 0}),
+                serde_json::json!({"type": "content_block_start", "index": 1, "content_block": {"type": "text", "text": ""}}),
+                serde_json::json!({"type": "content_block_delta", "index": 1, "delta": {"type": "text_delta", "text": "Adding it now."}}),
+                serde_json::json!({"type": "content_block_stop", "index": 1}),
+                serde_json::json!({"type": "content_block_start", "index": 2, "content_block": {"type": "tool_use", "id": "toolu_2", "name": "t", "input": {}}}),
+                serde_json::json!({"type": "content_block_stop", "index": 2}),
+                serde_json::json!({"type": "message_delta", "delta": {"stop_reason": "tool_use"}}),
+            ],
+        );
+        let resp = acc.into_response();
+        assert_eq!(resp.finish_reason, FinishReason::ToolUse);
+        assert_eq!(resp.content.parts.len(), 2); // thinking block dropped
+        assert!(matches!(&resp.content.parts[0], Part::Text(t) if t == "Adding it now."));
+        assert!(matches!(&resp.content.parts[1], Part::ToolCall { .. }));
+    }
+
+    #[test]
+    fn stream_accumulator_max_tokens_maps_to_length() {
+        let mut acc = ClaudeStreamAccumulator::default();
+        feed(
+            &mut acc,
+            &[
+                serde_json::json!({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}),
+                serde_json::json!({"type": "message_delta", "delta": {"stop_reason": "max_tokens"}, "usage": {"output_tokens": 200}}),
+            ],
+        );
+        let resp = acc.into_response();
+        assert_eq!(resp.finish_reason, FinishReason::Length);
+        assert!(resp.content.parts.is_empty());
+    }
+
+    #[test]
+    fn stream_accumulator_missing_stop_reason_with_tool_call_is_tool_use() {
+        let mut acc = ClaudeStreamAccumulator::default();
+        feed(
+            &mut acc,
+            &[serde_json::json!({"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use", "id": "x", "name": "y", "input": {}}})],
+        );
+        assert_eq!(acc.into_response().finish_reason, FinishReason::ToolUse);
     }
 
     #[test]
