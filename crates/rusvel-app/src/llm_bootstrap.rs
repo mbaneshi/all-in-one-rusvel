@@ -55,18 +55,43 @@ pub fn compose_llm_multi(pref: &OperatorRuntimePrefs) -> (MultiProvider, bool) {
             .unwrap_or_default()
             .trim()
             .to_string();
-        tracing::info!(
-            target: "rusvel::llm",
-            "registering ClaudeProvider (Messages API) for ModelProvider::Claude"
-        );
-        llm_multi.register(ModelProvider::Claude, Arc::new(ClaudeProvider::new(key)));
+        // `ANTHROPIC_BASE_URL` (same env the official SDKs honor) points the
+        // Messages API at a gateway (e.g. AvalAI: https://api.avalai.ir/v1).
+        let provider = match std::env::var("ANTHROPIC_BASE_URL") {
+            Ok(url) if !url.trim().is_empty() => {
+                tracing::info!(
+                    target: "rusvel::llm",
+                    base_url = %url.trim(),
+                    "registering ClaudeProvider (Messages API, custom base URL) for ModelProvider::Claude"
+                );
+                ClaudeProvider::with_base_url(key, url.trim())
+            }
+            _ => {
+                tracing::info!(
+                    target: "rusvel::llm",
+                    "registering ClaudeProvider (Messages API) for ModelProvider::Claude"
+                );
+                ClaudeProvider::new(key)
+            }
+        };
+        llm_multi.register(ModelProvider::Claude, Arc::new(provider));
     }
 
     if let Ok(raw) = std::env::var("OPENAI_API_KEY") {
         let key = raw.trim().to_string();
         if !key.is_empty() {
-            tracing::info!(target: "rusvel::llm", "registering OpenAiProvider");
-            llm_multi.register(ModelProvider::OpenAI, Arc::new(OpenAiProvider::new(key)));
+            // `OPENAI_BASE_URL` for OpenAI-compatible gateways (AvalAI, OpenRouter, …).
+            let provider = match std::env::var("OPENAI_BASE_URL") {
+                Ok(url) if !url.trim().is_empty() => {
+                    tracing::info!(target: "rusvel::llm", base_url = %url.trim(), "registering OpenAiProvider (custom base URL)");
+                    OpenAiProvider::with_base_url(key, url.trim())
+                }
+                _ => {
+                    tracing::info!(target: "rusvel::llm", "registering OpenAiProvider");
+                    OpenAiProvider::new(key)
+                }
+            };
+            llm_multi.register(ModelProvider::OpenAI, Arc::new(provider));
         }
     }
 
