@@ -25,7 +25,7 @@ For example, you can set a default model globally, override it for the Code depa
 
 ```toml
 # Default LLM model for all departments
-model = "claude-sonnet-4-20250514"
+model = "claude-sonnet-5"
 
 # Default effort level: "low", "medium", "high"
 effort = "medium"
@@ -48,7 +48,7 @@ model = "gpt-4o"
 
 [llm.claude]
 # Key loaded from ANTHROPIC_API_KEY env var
-model = "claude-sonnet-4-20250514"
+model = "claude-sonnet-5"
 ```
 
 ## User Profile (profile.toml)
@@ -71,7 +71,7 @@ Department-level config is set via the API or the Settings page in the UI:
 curl -X PUT http://localhost:3000/api/dept/code/config \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "claude-sonnet-4-20250514",
+    "model": "claude-sonnet-5",
     "effort": "high",
     "permission_mode": "default",
     "add_dirs": ["."]

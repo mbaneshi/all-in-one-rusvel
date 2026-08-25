@@ -2,6 +2,14 @@
 
 > **Last verified:** 2026-03-30 (metrics + `cargo test --workspace` + `cargo build`; see [verification-log-2026-03-30.md](verification-log-2026-03-30.md))
 
+> **⚠️ Update 2026-08-25 — several claims below (and in [audit-2026-05-15.md](../audit/audit-2026-05-15.md)) are now stale:**
+>
+> - **Department tool wiring is complete.** All 13 engine-backed departments register agent tools via the ADR-014 `ToolRegistrar` path (Sprint 1/2 commits wired 9; `dept-harvest` wired 2026-08-25 with 6 `harvest.*` tools). `dept-messaging` intentionally exposes no tools (no engine).
+> - **Job queue is persistent.** `rusvel_jobs::PersistentJobQueue` wraps the SQLite `jobs` table; `rusvel-app` runs interrupted-job recovery + 7-day retention pruning at startup. The "volatile `Vec<Job>`" claim no longer applies to the composition root.
+> - **Ollama and OpenAI stream natively** (SSE) — the batch-fallback gap is closed.
+> - **Claude adapter migrated to Claude 5 models** (`claude-opus-5` / `claude-sonnet-5` / `claude-haiku-4-5`), with adaptive thinking + effort support, prompt caching (`cache_control: ephemeral` on system), and current pricing in both `rusvel-llm::cost_tracking` and `rusvel-core::domain`.
+> - **`rusvel-evals` exists** — fixture-based eval crate (audit Option E) merged.
+
 ---
 
 ## How to re-verify

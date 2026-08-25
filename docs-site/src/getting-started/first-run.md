@@ -68,7 +68,7 @@ You can configure the default model per department in the Settings page or via t
 ```bash
 curl -X PUT http://localhost:3000/api/config \
   -H "Content-Type: application/json" \
-  -d '{"model": "claude-sonnet-4-20250514"}'
+  -d '{"model": "claude-sonnet-5"}'
 ```
 
 ## The MCP Server
