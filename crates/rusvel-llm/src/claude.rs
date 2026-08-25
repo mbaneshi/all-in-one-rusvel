@@ -37,14 +37,34 @@ fn computer_use_beta_header(tools: &[serde_json::Value]) -> Option<&'static str>
 /// Map UI shorthand (`sonnet`, `opus`, `haiku`) to Messages API model ids.
 fn normalize_claude_messages_api_model(model: &str) -> String {
     match model.trim() {
-        "" => "claude-sonnet-4-20250514".into(),
-        m if m.starts_with("claude-") && m.len() > 15 => m.to_string(),
-        "sonnet" => "claude-sonnet-4-20250514".into(),
-        "opus" => "claude-opus-4-20250514".into(),
-        "haiku" => "claude-haiku-4-20250414".into(),
+        "" => "claude-sonnet-5".into(),
+        "sonnet" => "claude-sonnet-5".into(),
+        "opus" => "claude-opus-5".into(),
+        "haiku" => "claude-haiku-4-5".into(),
+        m if m.starts_with("claude-") => m.to_string(),
         other => other.to_string(),
     }
 }
+
+/// Models that reject sampling params (`temperature`, `top_p`, `top_k`) with HTTP 400.
+///
+/// Opus 5 rejects them entirely; Sonnet 5 rejects non-default values. Older
+/// models (Haiku 4.5 and earlier) still accept them.
+fn model_rejects_sampling_params(model: &str) -> bool {
+    model.starts_with("claude-opus-5")
+        || model.starts_with("claude-sonnet-5")
+        || model.starts_with("claude-fable")
+}
+
+/// Request metadata key: set to `true` (or `"adaptive"`) to send `thinking: {"type": "adaptive"}`.
+///
+/// Opus 5 / Sonnet 5 default to adaptive thinking anyway, so this is only
+/// needed to be explicit. `budget_tokens` is not supported (HTTP 400 on
+/// current models).
+pub const CLAUDE_META_THINKING: &str = "claude.thinking";
+
+/// Request metadata key: effort level for `output_config` (`low`|`medium`|`high`|`xhigh`|`max`).
+pub const CLAUDE_META_EFFORT: &str = "claude.effort";
 
 // ════════════════════════════════════════════════════════════════════
 //  ClaudeProvider
@@ -162,6 +182,8 @@ impl LlmPort for ClaudeProvider {
             let mut full_text = String::new();
             let mut input_tokens: u32 = 0;
             let mut output_tokens: u32 = 0;
+            let mut cache_creation_input_tokens: u64 = 0;
+            let mut cache_read_input_tokens: u64 = 0;
             let mut buf = String::new();
             let mut stream = http_resp.bytes_stream();
 
@@ -209,6 +231,17 @@ impl LlmPort for ClaudeProvider {
                                 if let Some(it) = u.get("input_tokens").and_then(|v| v.as_u64()) {
                                     input_tokens = it as u32;
                                 }
+                                if let Some(cc) = u
+                                    .get("cache_creation_input_tokens")
+                                    .and_then(|v| v.as_u64())
+                                {
+                                    cache_creation_input_tokens = cc;
+                                }
+                                if let Some(cr) =
+                                    u.get("cache_read_input_tokens").and_then(|v| v.as_u64())
+                                {
+                                    cache_read_input_tokens = cr;
+                                }
                             }
                         }
                     }
@@ -222,7 +255,10 @@ impl LlmPort for ClaudeProvider {
                     input_tokens,
                     output_tokens,
                 },
-                metadata: serde_json::json!({}),
+                metadata: serde_json::json!({
+                    "cache_creation_input_tokens": cache_creation_input_tokens,
+                    "cache_read_input_tokens": cache_read_input_tokens,
+                }),
             };
             let _ = tx.send(LlmStreamEvent::Done(done)).await;
         });
@@ -238,11 +274,9 @@ impl LlmPort for ClaudeProvider {
 
     async fn list_models(&self) -> rusvel_core::error::Result<Vec<ModelRef>> {
         Ok(vec![
-            model_ref("claude-sonnet-4-20250514"),
-            model_ref("claude-haiku-4-20250414"),
-            model_ref("claude-opus-4-20250514"),
-            model_ref("claude-3-5-sonnet-20241022"),
-            model_ref("claude-3-5-haiku-20241022"),
+            model_ref("claude-opus-5"),
+            model_ref("claude-sonnet-5"),
+            model_ref("claude-haiku-4-5"),
         ])
     }
 
@@ -271,10 +305,17 @@ struct ClaudeRequest {
     model: String,
     messages: Vec<ClaudeMessage>,
     max_tokens: u32,
+    /// Array of text blocks with `cache_control` on the last block (prompt caching).
     #[serde(skip_serializing_if = "Option::is_none")]
-    system: Option<String>,
+    system: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f64>,
+    /// `{"type": "adaptive"}` when enabled — `budget_tokens` is rejected on current models.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thinking: Option<serde_json::Value>,
+    /// `{"effort": "low"|"medium"|"high"|"xhigh"|"max"}` when set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_config: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     tools: Vec<serde_json::Value>,
 }
@@ -301,6 +342,12 @@ struct ClaudeUsage {
     input_tokens: u32,
     #[serde(default)]
     output_tokens: u32,
+    /// Tokens written to the prompt cache (~1.25x input price).
+    #[serde(default)]
+    cache_creation_input_tokens: u64,
+    /// Tokens served from the prompt cache (~0.1x input price).
+    #[serde(default)]
+    cache_read_input_tokens: u64,
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -505,12 +552,40 @@ fn to_claude_request(req: &LlmRequest) -> ClaudeRequest {
         }
     }
 
+    let model = normalize_claude_messages_api_model(&req.model.model);
+    let temperature = if model_rejects_sampling_params(&model) {
+        None
+    } else {
+        req.temperature
+    };
+    let thinking = match req.metadata.get(CLAUDE_META_THINKING) {
+        Some(serde_json::Value::Bool(true)) => Some(serde_json::json!({"type": "adaptive"})),
+        Some(serde_json::Value::String(s)) if s == "adaptive" => {
+            Some(serde_json::json!({"type": "adaptive"}))
+        }
+        _ => None,
+    };
+    let output_config = req
+        .metadata
+        .get(CLAUDE_META_EFFORT)
+        .and_then(|v| v.as_str())
+        .filter(|e| matches!(*e, "low" | "medium" | "high" | "xhigh" | "max"))
+        .map(|e| serde_json::json!({"effort": e}));
+
     ClaudeRequest {
-        model: normalize_claude_messages_api_model(&req.model.model),
+        model,
         messages,
-        max_tokens: req.max_tokens.unwrap_or(4096),
-        system,
-        temperature: req.temperature,
+        max_tokens: req.max_tokens.unwrap_or(8192),
+        system: system.map(|s| {
+            serde_json::json!([{
+                "type": "text",
+                "text": s,
+                "cache_control": {"type": "ephemeral"}
+            }])
+        }),
+        temperature,
+        thinking,
+        output_config,
         tools: req.tools.clone(),
     }
 }
@@ -539,7 +614,10 @@ fn from_claude_response(resp: ClaudeResponse) -> LlmResponse {
             input_tokens: resp.usage.input_tokens,
             output_tokens: resp.usage.output_tokens,
         },
-        metadata: serde_json::json!({}),
+        metadata: serde_json::json!({
+            "cache_creation_input_tokens": resp.usage.cache_creation_input_tokens,
+            "cache_read_input_tokens": resp.usage.cache_read_input_tokens,
+        }),
     }
 }
 
@@ -856,7 +934,7 @@ mod tests {
         LlmRequest {
             model: ModelRef {
                 provider: ModelProvider::Claude,
-                model: "claude-sonnet-4-20250514".into(),
+                model: "claude-sonnet-5".into(),
             },
             messages: vec![
                 LlmMessage {
@@ -879,10 +957,78 @@ mod tests {
     fn to_claude_request_extracts_system() {
         let req = sample_request();
         let wire = to_claude_request(&req);
-        assert_eq!(wire.system.as_deref(), Some("You are helpful."));
+        // System is sent as an array of text blocks with cache_control on the last block.
+        let sys = wire.system.expect("system");
+        let blocks = sys.as_array().expect("system array");
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0]["type"], "text");
+        assert_eq!(blocks[0]["text"], "You are helpful.");
+        assert_eq!(blocks[0]["cache_control"]["type"], "ephemeral");
         // System message should NOT appear in the messages array
         assert_eq!(wire.messages.len(), 1);
         assert_eq!(wire.messages[0].role, "user");
+    }
+
+    #[test]
+    fn normalize_model_maps_shorthands_and_passthrough() {
+        assert_eq!(normalize_claude_messages_api_model(""), "claude-sonnet-5");
+        assert_eq!(
+            normalize_claude_messages_api_model("sonnet"),
+            "claude-sonnet-5"
+        );
+        assert_eq!(normalize_claude_messages_api_model("opus"), "claude-opus-5");
+        assert_eq!(
+            normalize_claude_messages_api_model("haiku"),
+            "claude-haiku-4-5"
+        );
+        // Short current ids must pass through unmangled.
+        assert_eq!(
+            normalize_claude_messages_api_model("claude-opus-5"),
+            "claude-opus-5"
+        );
+        assert_eq!(
+            normalize_claude_messages_api_model("claude-haiku-4-5"),
+            "claude-haiku-4-5"
+        );
+    }
+
+    #[test]
+    fn to_claude_request_strips_sampling_params_for_current_models() {
+        // Sonnet 5 / Opus 5 reject temperature with HTTP 400 — must be omitted.
+        let req = sample_request();
+        assert_eq!(req.temperature, Some(0.7));
+        let wire = to_claude_request(&req);
+        assert!(wire.temperature.is_none());
+    }
+
+    #[test]
+    fn to_claude_request_keeps_temperature_for_older_models() {
+        let mut req = sample_request();
+        req.model.model = "claude-haiku-4-5".into();
+        let wire = to_claude_request(&req);
+        assert_eq!(wire.temperature, Some(0.7));
+    }
+
+    #[test]
+    fn to_claude_request_thinking_and_effort_from_metadata() {
+        let mut req = sample_request();
+        req.metadata = serde_json::json!({
+            CLAUDE_META_THINKING: true,
+            CLAUDE_META_EFFORT: "high",
+        });
+        let wire = to_claude_request(&req);
+        assert_eq!(wire.thinking, Some(serde_json::json!({"type": "adaptive"})));
+        assert_eq!(
+            wire.output_config,
+            Some(serde_json::json!({"effort": "high"}))
+        );
+    }
+
+    #[test]
+    fn to_claude_request_omits_thinking_and_effort_by_default() {
+        let wire = to_claude_request(&sample_request());
+        assert!(wire.thinking.is_none());
+        assert!(wire.output_config.is_none());
     }
 
     #[test]
@@ -897,7 +1043,8 @@ mod tests {
         let mut req = sample_request();
         req.max_tokens = None;
         let wire = to_claude_request(&req);
-        assert_eq!(wire.max_tokens, 4096);
+        // 8192 leaves headroom for thinking-enabled models.
+        assert_eq!(wire.max_tokens, 8192);
     }
 
     #[test]
@@ -911,6 +1058,7 @@ mod tests {
             usage: ClaudeUsage {
                 input_tokens: 10,
                 output_tokens: 5,
+                ..ClaudeUsage::default()
             },
         };
         let llm_resp = from_claude_response(resp);
@@ -990,7 +1138,7 @@ mod tests {
         let req = LlmRequest {
             model: ModelRef {
                 provider: ModelProvider::Claude,
-                model: "claude-sonnet-4-20250514".into(),
+                model: "claude-sonnet-5".into(),
             },
             messages: vec![LlmMessage {
                 role: LlmRole::Tool,
