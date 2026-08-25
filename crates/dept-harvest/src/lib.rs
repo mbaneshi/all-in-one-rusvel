@@ -5,6 +5,7 @@
 //! and lifecycle.
 
 mod manifest;
+mod tools;
 
 use std::sync::{Arc, OnceLock};
 
@@ -53,7 +54,9 @@ impl DepartmentApp for HarvestDepartment {
             .with_agent(ctx.agent.clone());
         harvest.configure_rag(ctx.embedding.clone(), ctx.vector_store.clone());
         let engine = Arc::new(harvest);
-        let _ = self.engine.set(engine);
+        let _ = self.engine.set(engine.clone());
+
+        tools::register_tools(&mut ctx.tools, engine);
 
         tracing::info!("Harvest department registered");
         Ok(())
