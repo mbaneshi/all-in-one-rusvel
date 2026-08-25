@@ -1,0 +1,9 @@
+{
+  "tasks": [
+    {"title": "Review open PRs",        "priority": "High"},
+    {"title": "Write changelog entry",  "priority": "Medium"},
+    {"title": "Triage harvest backlog", "priority": "Low"}
+  ],
+  "focus_areas": ["code review", "release prep"],
+  "notes": "Recorded fixture — deterministic output."
+}

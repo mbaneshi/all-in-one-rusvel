@@ -1,0 +1,39 @@
+[package]
+name = "rusvel-evals"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Fixture-based eval suite — the merge gate for engine work (issue #8)"
+
+[lib]
+name = "rusvel_evals"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rusvel-evals"
+path = "src/main.rs"
+
+[dependencies]
+rusvel-core = { workspace = true }
+rusvel-db = { workspace = true }
+forge-engine = { workspace = true }
+harvest-engine = { workspace = true }
+code-engine = { workspace = true }
+content-engine = { workspace = true }
+flow-engine = { workspace = true }
+
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+clap = { workspace = true }
+tempfile = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[lints]
+workspace = true

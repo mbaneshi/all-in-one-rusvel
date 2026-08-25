@@ -63,6 +63,9 @@ members = [
     "crates/rusvel-tui",
     "crates/rusvel-mcp",
     "crates/rusvel-app",
+
+    # ─── Quality gate (issue #8) ───
+    "crates/rusvel-evals",
 ]
 
 [workspace.package]
@@ -198,6 +201,7 @@ rusvel-api = { path = "crates/rusvel-api" }
 rusvel-cli = { path = "crates/rusvel-cli" }
 rusvel-mcp = { path = "crates/rusvel-mcp" }
 rusvel-tui = { path = "crates/rusvel-tui" }
+rusvel-evals = { path = "crates/rusvel-evals" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
