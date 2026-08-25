@@ -72,6 +72,27 @@ fn agent_permission_blocks_tool(
     }
 }
 
+/// USD cost of one LLM response, for [`AgentOutput::cost_estimate`] accumulation.
+///
+/// The cost-tracking LLM wrapper (`rusvel-llm`) stamps the per-call cost it
+/// records into `metadata.cost_usd` — including catalog/actual pricing and
+/// cache tokens — so that figure is authoritative when present. When the loop
+/// runs against a bare provider (tests, direct wiring) fall back to the shared
+/// list-price estimator for the requested model.
+fn response_cost_usd(request_model: &ModelRef, response: &LlmResponse) -> f64 {
+    response
+        .metadata
+        .get("cost_usd")
+        .and_then(|v| v.as_f64())
+        .unwrap_or_else(|| {
+            estimate_llm_cost_usd(
+                &request_model.provider,
+                &request_model.model,
+                &response.usage,
+            )
+        })
+}
+
 /// When conversation turns exceed this count, older turns are summarized.
 const COMPACT_THRESHOLD: usize = 42;
 
@@ -697,6 +718,7 @@ async fn run_streaming_loop(
     });
 
     let mut total_usage = LlmUsage::default();
+    let mut total_cost_usd: f64 = 0.0;
     let mut tool_calls: u32 = 0;
 
     // Deferred tool loading: only non-searchable tools go into the initial prompt.
@@ -713,6 +735,7 @@ async fn run_streaming_loop(
         compact_messages(llm.as_ref(), &mut messages).await;
 
         let request = AgentRuntime::build_request(config, &messages, &tool_defs);
+        let request_model = request.model.clone();
 
         // Use stream() for incremental deltas
         let mut stream_rx = llm.stream(request).await?;
@@ -749,6 +772,7 @@ async fn run_streaming_loop(
 
         total_usage.input_tokens += response.usage.input_tokens;
         total_usage.output_tokens += response.usage.output_tokens;
+        total_cost_usd += response_cost_usd(&request_model, &response);
 
         match response.finish_reason {
             FinishReason::Stop | FinishReason::Length | FinishReason::ContentFilter => {
@@ -757,7 +781,7 @@ async fn run_streaming_loop(
                     content: response.content,
                     tool_calls,
                     usage: total_usage,
-                    cost_estimate: 0.0,
+                    cost_estimate: total_cost_usd,
                     metadata: serde_json::json!({}),
                 });
             }
@@ -994,6 +1018,7 @@ impl AgentPort for AgentRuntime {
         });
 
         let mut total_usage = LlmUsage::default();
+        let mut total_cost_usd: f64 = 0.0;
         let mut tool_calls: u32 = 0;
 
         // Deferred tool loading: only non-searchable tools in the initial prompt.
@@ -1024,11 +1049,13 @@ impl AgentPort for AgentRuntime {
             compact_messages(self.llm.as_ref(), &mut messages).await;
 
             let request = Self::build_request(&config, &messages, &tool_defs);
+            let request_model = request.model.clone();
             let response = self.llm.generate(request).await?;
 
-            // Accumulate usage.
+            // Accumulate usage and cost.
             total_usage.input_tokens += response.usage.input_tokens;
             total_usage.output_tokens += response.usage.output_tokens;
+            total_cost_usd += response_cost_usd(&request_model, &response);
 
             match response.finish_reason {
                 FinishReason::Stop | FinishReason::Length | FinishReason::ContentFilter => {
@@ -1038,7 +1065,7 @@ impl AgentPort for AgentRuntime {
                         content: response.content,
                         tool_calls,
                         usage: total_usage,
-                        cost_estimate: 0.0,
+                        cost_estimate: total_cost_usd,
                         metadata: serde_json::json!({}),
                     };
 
@@ -1438,6 +1465,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_accumulates_cost_from_response_metadata() {
+        // The cost-tracking LLM wrapper stamps per-call cost into
+        // metadata.cost_usd; the loop must sum it into cost_estimate.
+        let mut first = tool_use_response("search");
+        first.metadata = serde_json::json!({ "cost_usd": 0.25 });
+        let mut last = stop_response("done");
+        last.metadata = serde_json::json!({ "cost_usd": 0.5 });
+
+        let rt = make_runtime(vec![first, last]);
+        let run_id = rt.create(make_config()).await.unwrap();
+        let output = rt.run(&run_id, Content::text("Hi")).await.unwrap();
+
+        assert!((output.cost_estimate - 0.75).abs() < 1e-12);
+    }
+
+    #[tokio::test]
+    async fn run_estimates_cost_when_metadata_absent() {
+        // Bare providers carry no stamped cost; fall back to list-price
+        // estimate for the requested model (default: Claude sonnet, $3/$15).
+        let rt = make_runtime(vec![stop_response("Hello!")]);
+        let run_id = rt.create(make_config()).await.unwrap();
+        let output = rt.run(&run_id, Content::text("Hi")).await.unwrap();
+
+        let expected = 10.0 * 3.0 / 1e6 + 20.0 * 15.0 / 1e6;
+        assert!(
+            (output.cost_estimate - expected).abs() < 1e-12,
+            "got {}",
+            output.cost_estimate
+        );
+    }
+
+    #[tokio::test]
     async fn stop_prevents_run() {
         let rt = make_runtime(vec![stop_response("ok")]);
         let run_id = rt.create(make_config()).await.unwrap();
@@ -1572,6 +1631,10 @@ mod tests {
                 AgentEvent::Done { output } => {
                     assert_eq!(output.run_id, run_id);
                     assert_eq!(output.tool_calls, 0);
+                    assert!(
+                        output.cost_estimate > 0.0,
+                        "streaming Done must carry a priced cost_estimate"
+                    );
                     done = true;
                 }
                 AgentEvent::Error { message } => panic!("unexpected error: {message}"),

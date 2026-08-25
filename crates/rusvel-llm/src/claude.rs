@@ -180,10 +180,7 @@ impl LlmPort for ClaudeProvider {
             }
 
             let mut full_text = String::new();
-            let mut input_tokens: u32 = 0;
-            let mut output_tokens: u32 = 0;
-            let mut cache_creation_input_tokens: u64 = 0;
-            let mut cache_read_input_tokens: u64 = 0;
+            let mut usage_acc = StreamUsageAcc::default();
             let mut buf = String::new();
             let mut stream = http_resp.bytes_stream();
 
@@ -220,29 +217,8 @@ impl LlmPort for ClaudeProvider {
                                     }
                                 }
                             }
-                        } else if typ == Some("message_delta") {
-                            if let Some(u) = ev.get("usage") {
-                                if let Some(ot) = u.get("output_tokens").and_then(|v| v.as_u64()) {
-                                    output_tokens = ot as u32;
-                                }
-                            }
-                        } else if typ == Some("message_start") {
-                            if let Some(u) = ev.get("message").and_then(|m| m.get("usage")) {
-                                if let Some(it) = u.get("input_tokens").and_then(|v| v.as_u64()) {
-                                    input_tokens = it as u32;
-                                }
-                                if let Some(cc) = u
-                                    .get("cache_creation_input_tokens")
-                                    .and_then(|v| v.as_u64())
-                                {
-                                    cache_creation_input_tokens = cc;
-                                }
-                                if let Some(cr) =
-                                    u.get("cache_read_input_tokens").and_then(|v| v.as_u64())
-                                {
-                                    cache_read_input_tokens = cr;
-                                }
-                            }
+                        } else {
+                            usage_acc.apply_event(&ev);
                         }
                     }
                 }
@@ -252,12 +228,12 @@ impl LlmPort for ClaudeProvider {
                 content: Content::text(&full_text),
                 finish_reason: FinishReason::Stop,
                 usage: LlmUsage {
-                    input_tokens,
-                    output_tokens,
+                    input_tokens: usage_acc.input_tokens,
+                    output_tokens: usage_acc.output_tokens,
                 },
                 metadata: serde_json::json!({
-                    "cache_creation_input_tokens": cache_creation_input_tokens,
-                    "cache_read_input_tokens": cache_read_input_tokens,
+                    "cache_creation_input_tokens": usage_acc.cache_creation_input_tokens,
+                    "cache_read_input_tokens": usage_acc.cache_read_input_tokens,
                 }),
             };
             let _ = tx.send(LlmStreamEvent::Done(done)).await;
@@ -293,6 +269,51 @@ fn model_ref(name: &str) -> ModelRef {
     ModelRef {
         provider: ModelProvider::Claude,
         model: name.into(),
+    }
+}
+
+/// Accumulates token usage across streaming SSE events.
+#[derive(Debug, Default, Clone, Copy)]
+#[allow(clippy::struct_field_names)] // field names mirror the wire format
+struct StreamUsageAcc {
+    input_tokens: u32,
+    output_tokens: u32,
+    cache_creation_input_tokens: u64,
+    cache_read_input_tokens: u64,
+}
+
+impl StreamUsageAcc {
+    /// Fold usage from one streaming event.
+    ///
+    /// Anthropic-native streams report input/cache tokens on `message_start`
+    /// and cumulative output tokens on `message_delta`. Some gateways (e.g.
+    /// AvalAI) report zeros on `message_start` and the real totals in the
+    /// final `message_delta` usage instead — so any later nonzero value wins,
+    /// while zeros never overwrite an earlier real count.
+    fn apply_event(&mut self, ev: &serde_json::Value) {
+        let usage = match ev.get("type").and_then(|t| t.as_str()) {
+            Some("message_start") => ev.pointer("/message/usage"),
+            Some("message_delta") => ev.get("usage"),
+            _ => None,
+        };
+        let Some(u) = usage else { return };
+        let get = |key: &str| {
+            u.get(key)
+                .and_then(serde_json::Value::as_u64)
+                .filter(|&n| n > 0)
+        };
+        if let Some(it) = get("input_tokens") {
+            self.input_tokens = it as u32;
+        }
+        if let Some(ot) = get("output_tokens") {
+            self.output_tokens = ot as u32;
+        }
+        if let Some(cc) = get("cache_creation_input_tokens") {
+            self.cache_creation_input_tokens = cc;
+        }
+        if let Some(cr) = get("cache_read_input_tokens") {
+            self.cache_read_input_tokens = cr;
+        }
     }
 }
 
@@ -1194,6 +1215,60 @@ mod tests {
         let models = rt.block_on(provider.list_models()).unwrap();
         assert!(models.len() >= 3);
         assert!(models.iter().all(|m| m.provider == ModelProvider::Claude));
+    }
+
+    #[test]
+    fn stream_usage_anthropic_native_event_order() {
+        // Native API: input + cache tokens on message_start, output on message_delta.
+        let mut acc = StreamUsageAcc::default();
+        acc.apply_event(&serde_json::json!({
+            "type": "message_start",
+            "message": {"usage": {"input_tokens": 25, "output_tokens": 1,
+                "cache_creation_input_tokens": 7, "cache_read_input_tokens": 3}}
+        }));
+        acc.apply_event(&serde_json::json!({
+            "type": "message_delta",
+            "delta": {"stop_reason": "end_turn"},
+            "usage": {"output_tokens": 13}
+        }));
+        assert_eq!(acc.input_tokens, 25);
+        assert_eq!(acc.output_tokens, 13);
+        assert_eq!(acc.cache_creation_input_tokens, 7);
+        assert_eq!(acc.cache_read_input_tokens, 3);
+    }
+
+    #[test]
+    fn stream_usage_gateway_reports_totals_in_message_delta() {
+        // AvalAI-style gateway: zeros in message_start, real usage in the
+        // final message_delta (observed live against api.avalai.ir).
+        let mut acc = StreamUsageAcc::default();
+        acc.apply_event(&serde_json::json!({
+            "type": "message_start",
+            "message": {"usage": {"input_tokens": 0, "output_tokens": 0,
+                "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}}
+        }));
+        acc.apply_event(&serde_json::json!({
+            "type": "message_delta",
+            "delta": {"stop_reason": "end_turn"},
+            "usage": {"input_tokens": 9, "output_tokens": 16}
+        }));
+        assert_eq!(acc.input_tokens, 9);
+        assert_eq!(acc.output_tokens, 16);
+    }
+
+    #[test]
+    fn stream_usage_zero_never_overwrites_real_count() {
+        let mut acc = StreamUsageAcc::default();
+        acc.apply_event(&serde_json::json!({
+            "type": "message_start",
+            "message": {"usage": {"input_tokens": 25}}
+        }));
+        acc.apply_event(&serde_json::json!({
+            "type": "message_delta",
+            "usage": {"input_tokens": 0, "output_tokens": 13}
+        }));
+        assert_eq!(acc.input_tokens, 25);
+        assert_eq!(acc.output_tokens, 13);
     }
 
     #[test]
