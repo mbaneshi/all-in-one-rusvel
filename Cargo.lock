@@ -6713,9 +6713,12 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
+ "rusqlite",
  "rusvel-core",
+ "rusvel-db",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "uuid",
