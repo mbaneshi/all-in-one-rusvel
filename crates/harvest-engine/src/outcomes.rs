@@ -105,7 +105,7 @@ pub async fn list_outcomes(
         .into_iter()
         .filter_map(|v| serde_json::from_value(v).ok())
         .collect();
-    out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    out.sort_by_key(|a| std::cmp::Reverse(a.created_at));
     Ok(out)
 }
 

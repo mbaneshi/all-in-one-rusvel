@@ -51,7 +51,7 @@ curl -X POST http://localhost:3000/api/agents \
     "name": "seo-analyst",
     "role": "SEO and keyword research specialist",
     "instructions": "You analyze websites for SEO performance...",
-    "model": "claude-sonnet-4-20250514",
+    "model": "claude-sonnet-5",
     "department": "distro",
     "capabilities": ["seo"]
   }'
@@ -82,7 +82,7 @@ Agents can use any configured LLM provider:
 | Provider | Example Models |
 |----------|---------------|
 | Ollama | `llama3.1`, `mistral`, `codellama` |
-| Claude API | `claude-sonnet-4-20250514`, `claude-opus-4-20250514` |
+| Claude API | `claude-sonnet-5`, `claude-opus-5` |
 | Claude CLI | Real streaming via Claude CLI binary |
 | OpenAI | `gpt-4o`, `gpt-4o-mini` |
 

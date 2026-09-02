@@ -44,6 +44,13 @@ pub type HookHandler = Arc<dyn Fn(&str, &serde_json::Value) -> HookDecision + Se
 /// Default maximum iterations in the agent loop.
 const DEFAULT_MAX_ITERATIONS: u32 = 24;
 
+/// Default per-request output token budget for agent runs.
+///
+/// Must stay generous (≥ 8192): on adaptive-thinking models (Claude Sonnet 5 /
+/// Opus 5) thinking tokens count against `max_tokens`, so a small budget can be
+/// consumed entirely by thinking, yielding an empty visible completion (#12).
+const DEFAULT_MAX_OUTPUT_TOKENS: u32 = 8192;
+
 fn agent_permission_blocks_tool(
     config: &AgentConfig,
     tool_name: &str,
@@ -70,6 +77,27 @@ fn agent_permission_blocks_tool(
             }
         }
     }
+}
+
+/// USD cost of one LLM response, for [`AgentOutput::cost_estimate`] accumulation.
+///
+/// The cost-tracking LLM wrapper (`rusvel-llm`) stamps the per-call cost it
+/// records into `metadata.cost_usd` — including catalog/actual pricing and
+/// cache tokens — so that figure is authoritative when present. When the loop
+/// runs against a bare provider (tests, direct wiring) fall back to the shared
+/// list-price estimator for the requested model.
+fn response_cost_usd(request_model: &ModelRef, response: &LlmResponse) -> f64 {
+    response
+        .metadata
+        .get("cost_usd")
+        .and_then(|v| v.as_f64())
+        .unwrap_or_else(|| {
+            estimate_llm_cost_usd(
+                &request_model.provider,
+                &request_model.model,
+                &response.usage,
+            )
+        })
 }
 
 /// When conversation turns exceed this count, older turns are summarized.
@@ -385,7 +413,7 @@ impl AgentRuntime {
             messages: messages.to_vec(),
             tools,
             temperature: None,
-            max_tokens: None,
+            max_tokens: Some(DEFAULT_MAX_OUTPUT_TOKENS),
             metadata: merge_llm_request_metadata(config),
         }
     }
@@ -503,6 +531,29 @@ fn extract_text_response(content: &Content) -> String {
         })
         .collect::<Vec<_>>()
         .join("")
+}
+
+/// Guard terminal completions before treating them as success.
+///
+/// A [`FinishReason::Length`] finish with no visible text means the whole
+/// output budget was consumed before any text was emitted (on
+/// adaptive-thinking Claude models, thinking tokens count against
+/// `max_tokens`). Silently returning it would complete the run with empty
+/// output (#12), so it is surfaced as an error instead. A `Length` finish
+/// that did produce text is allowed through with a warning (truncated).
+fn check_terminal_response(response: &LlmResponse) -> Result<()> {
+    if response.finish_reason == FinishReason::Length {
+        if extract_text_response(&response.content).trim().is_empty() {
+            return Err(RusvelError::Llm(
+                "model hit the max_tokens limit before producing any visible text \
+                 (the output budget may have been consumed by thinking); \
+                 retry with a larger max_tokens"
+                    .into(),
+            ));
+        }
+        warn!("LLM finished with max_tokens; output text is likely truncated");
+    }
+    Ok(())
 }
 
 /// Match a tool name against a hook pattern.
@@ -704,6 +755,7 @@ async fn run_streaming_loop(
     });
 
     let mut total_usage = LlmUsage::default();
+    let mut total_cost_usd: f64 = 0.0;
     let mut tool_calls: u32 = 0;
 
     // Deferred tool loading: only non-searchable tools go into the initial prompt.
@@ -720,6 +772,7 @@ async fn run_streaming_loop(
         compact_messages(llm.as_ref(), &mut messages).await;
 
         let request = AgentRuntime::build_request(config, &messages, &tool_defs);
+        let request_model = request.model.clone();
 
         // Use stream() for incremental deltas
         let mut stream_rx = llm.stream(request).await?;
@@ -756,15 +809,17 @@ async fn run_streaming_loop(
 
         total_usage.input_tokens += response.usage.input_tokens;
         total_usage.output_tokens += response.usage.output_tokens;
+        total_cost_usd += response_cost_usd(&request_model, &response);
 
         match response.finish_reason {
             FinishReason::Stop | FinishReason::Length | FinishReason::ContentFilter => {
+                check_terminal_response(&response)?;
                 return Ok(AgentOutput {
                     run_id: *run_id,
                     content: response.content,
                     tool_calls,
                     usage: total_usage,
-                    cost_estimate: 0.0,
+                    cost_estimate: total_cost_usd,
                     metadata: serde_json::json!({}),
                 });
             }
@@ -1001,6 +1056,7 @@ impl AgentPort for AgentRuntime {
         });
 
         let mut total_usage = LlmUsage::default();
+        let mut total_cost_usd: f64 = 0.0;
         let mut tool_calls: u32 = 0;
 
         // Deferred tool loading: only non-searchable tools in the initial prompt.
@@ -1031,21 +1087,29 @@ impl AgentPort for AgentRuntime {
             compact_messages(self.llm.as_ref(), &mut messages).await;
 
             let request = Self::build_request(&config, &messages, &tool_defs);
+            let request_model = request.model.clone();
             let response = self.llm.generate(request).await?;
 
-            // Accumulate usage.
+            // Accumulate usage and cost.
             total_usage.input_tokens += response.usage.input_tokens;
             total_usage.output_tokens += response.usage.output_tokens;
+            total_cost_usd += response_cost_usd(&request_model, &response);
 
             match response.finish_reason {
                 FinishReason::Stop | FinishReason::Length | FinishReason::ContentFilter => {
+                    if let Err(e) = check_terminal_response(&response) {
+                        self.runs.write().await.entry(*run_id).and_modify(|s| {
+                            s.status = AgentStatus::Failed;
+                        });
+                        return Err(e);
+                    }
                     // Terminal — return the final content.
                     let output = AgentOutput {
                         run_id: *run_id,
                         content: response.content,
                         tool_calls,
                         usage: total_usage,
-                        cost_estimate: 0.0,
+                        cost_estimate: total_cost_usd,
                         metadata: serde_json::json!({}),
                     };
 
@@ -1445,6 +1509,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_accumulates_cost_from_response_metadata() {
+        // The cost-tracking LLM wrapper stamps per-call cost into
+        // metadata.cost_usd; the loop must sum it into cost_estimate.
+        let mut first = tool_use_response("search");
+        first.metadata = serde_json::json!({ "cost_usd": 0.25 });
+        let mut last = stop_response("done");
+        last.metadata = serde_json::json!({ "cost_usd": 0.5 });
+
+        let rt = make_runtime(vec![first, last]);
+        let run_id = rt.create(make_config()).await.unwrap();
+        let output = rt.run(&run_id, Content::text("Hi")).await.unwrap();
+
+        assert!((output.cost_estimate - 0.75).abs() < 1e-12);
+    }
+
+    #[tokio::test]
+    async fn run_estimates_cost_when_metadata_absent() {
+        // Bare providers carry no stamped cost; fall back to list-price
+        // estimate for the requested model (default: Claude sonnet, $3/$15).
+        let rt = make_runtime(vec![stop_response("Hello!")]);
+        let run_id = rt.create(make_config()).await.unwrap();
+        let output = rt.run(&run_id, Content::text("Hi")).await.unwrap();
+
+        let expected = 10.0 * 3.0 / 1e6 + 20.0 * 15.0 / 1e6;
+        assert!(
+            (output.cost_estimate - expected).abs() < 1e-12,
+            "got {}",
+            output.cost_estimate
+        );
+    }
+
+    #[tokio::test]
     async fn stop_prevents_run() {
         let rt = make_runtime(vec![stop_response("ok")]);
         let run_id = rt.create(make_config()).await.unwrap();
@@ -1473,6 +1569,49 @@ mod tests {
         let err = rt.run(&run_id, Content::text("loop")).await.unwrap_err();
         assert!(err.to_string().contains("exceeded"));
         assert_eq!(rt.status(&run_id).await.unwrap(), AgentStatus::Failed);
+    }
+
+    fn length_response(text: &str) -> LlmResponse {
+        LlmResponse {
+            content: if text.is_empty() {
+                Content { parts: vec![] }
+            } else {
+                Content::text(text)
+            },
+            finish_reason: FinishReason::Length,
+            usage: LlmUsage {
+                input_tokens: 10,
+                output_tokens: 200,
+            },
+            metadata: serde_json::json!({}),
+        }
+    }
+
+    #[tokio::test]
+    async fn length_finish_with_empty_text_errors() {
+        // #12: an all-thinking max_tokens completion must not be reported
+        // as a clean empty success.
+        let rt = make_runtime(vec![length_response("")]);
+        let run_id = rt.create(make_config()).await.unwrap();
+        let err = rt.run(&run_id, Content::text("Hi")).await.unwrap_err();
+        assert!(err.to_string().contains("max_tokens"));
+        assert_eq!(rt.status(&run_id).await.unwrap(), AgentStatus::Failed);
+    }
+
+    #[tokio::test]
+    async fn length_finish_with_text_still_completes() {
+        let rt = make_runtime(vec![length_response("Partial answer")]);
+        let run_id = rt.create(make_config()).await.unwrap();
+        let output = rt.run(&run_id, Content::text("Hi")).await.unwrap();
+        assert_eq!(crate::agent_output_to_plain(&output), "Partial answer");
+        assert_eq!(rt.status(&run_id).await.unwrap(), AgentStatus::Completed);
+    }
+
+    #[tokio::test]
+    async fn build_request_sets_default_max_tokens() {
+        let request = AgentRuntime::build_request(&make_config(), &[], &[]);
+        assert_eq!(request.max_tokens, Some(DEFAULT_MAX_OUTPUT_TOKENS));
+        assert!(request.max_tokens.unwrap() >= 8192);
     }
 
     // ── Streaming mock ─────────────────────────────────────────
@@ -1579,6 +1718,10 @@ mod tests {
                 AgentEvent::Done { output } => {
                     assert_eq!(output.run_id, run_id);
                     assert_eq!(output.tool_calls, 0);
+                    assert!(
+                        output.cost_estimate > 0.0,
+                        "streaming Done must carry a priced cost_estimate"
+                    );
                     done = true;
                 }
                 AgentEvent::Error { message } => panic!("unexpected error: {message}"),
@@ -1628,6 +1771,33 @@ mod tests {
 
         assert!(got_tool_result, "should receive ToolResult");
         assert!(got_done, "should receive Done");
+    }
+
+    #[tokio::test]
+    async fn streaming_length_finish_with_empty_text_emits_error() {
+        // #12: streaming path must surface an Error event instead of a
+        // Done event with empty output when max_tokens ate the budget.
+        let rt = make_streaming_runtime(vec![length_response("")], 0);
+        let run_id = rt.create(make_config()).await.unwrap();
+        let mut rx = rt
+            .run_streaming(&run_id, Content::text("Hi"))
+            .await
+            .unwrap();
+
+        let mut got_error = false;
+        while let Some(event) = rx.recv().await {
+            match event {
+                AgentEvent::Error { message } => {
+                    assert!(message.contains("max_tokens"));
+                    got_error = true;
+                }
+                AgentEvent::Done { .. } => {
+                    panic!("empty Length completion must not emit Done")
+                }
+                _ => {}
+            }
+        }
+        assert!(got_error, "should receive Error event");
     }
 
     #[tokio::test]

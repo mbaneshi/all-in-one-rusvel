@@ -1,12 +1,13 @@
 //! `OpenAI` HTTP adapter implementing [`LlmPort`].
 
 use async_trait::async_trait;
+use futures::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
 use rusvel_core::domain::*;
-use rusvel_core::error::RusvelError;
+use rusvel_core::error::{Result, RusvelError};
 use rusvel_core::ports::LlmPort;
 
 // ════════════════════════════════════════════════════════════════════
@@ -69,6 +70,125 @@ impl LlmPort for OpenAiProvider {
         let oai_resp: OpenAiChatResponse = http_resp.json().await.map_err(map_reqwest_error)?;
 
         Ok(from_openai_response(oai_resp))
+    }
+
+    async fn stream(
+        &self,
+        request: LlmRequest,
+    ) -> Result<tokio::sync::mpsc::Receiver<LlmStreamEvent>> {
+        let oai_req = to_openai_request(&request);
+        let mut body = serde_json::to_value(&oai_req)
+            .map_err(|e| RusvelError::Llm(format!("openai stream body: {e}")))?;
+        if let Some(obj) = body.as_object_mut() {
+            obj.insert("stream".into(), serde_json::json!(true));
+            obj.insert(
+                "stream_options".into(),
+                serde_json::json!({ "include_usage": true }),
+            );
+        }
+        let url = format!("{}/chat/completions", self.base_url);
+        let api_key = self.api_key.clone();
+        let client = self.client.clone();
+
+        debug!(model = %request.model.model, "openai stream");
+
+        let (tx, rx) = tokio::sync::mpsc::channel(128);
+
+        tokio::spawn(async move {
+            let http_resp = match client
+                .post(&url)
+                .bearer_auth(&api_key)
+                .json(&body)
+                .send()
+                .await
+            {
+                Ok(r) => r,
+                Err(e) => {
+                    let _ = tx
+                        .send(LlmStreamEvent::Error(map_reqwest_error(e).to_string()))
+                        .await;
+                    return;
+                }
+            };
+
+            let status = http_resp.status();
+            if !status.is_success() {
+                let body_txt = http_resp.text().await.unwrap_or_default();
+                let _ = tx
+                    .send(LlmStreamEvent::Error(
+                        map_openai_http_error(status.as_u16(), &body_txt).to_string(),
+                    ))
+                    .await;
+                return;
+            }
+
+            let mut full_text = String::new();
+            let mut input_tokens: u32 = 0;
+            let mut output_tokens: u32 = 0;
+            let mut finish = FinishReason::Stop;
+            let mut buf = String::new();
+            let mut bytes = http_resp.bytes_stream();
+
+            while let Some(chunk) = bytes.next().await {
+                let chunk = match chunk {
+                    Ok(c) => c,
+                    Err(e) => {
+                        let _ = tx.send(LlmStreamEvent::Error(e.to_string())).await;
+                        return;
+                    }
+                };
+                buf.push_str(&String::from_utf8_lossy(&chunk));
+                while let Some(pos) = buf.find('\n') {
+                    let line = buf[..pos].trim_end_matches('\r').to_string();
+                    buf.drain(..=pos);
+                    let line = line.trim();
+                    let Some(data) = line.strip_prefix("data:") else {
+                        continue;
+                    };
+                    let data = data.trim();
+                    if data.is_empty() || data == "[DONE]" {
+                        continue;
+                    }
+                    let Ok(ev) = serde_json::from_str::<OpenAiStreamChunk>(data) else {
+                        continue;
+                    };
+                    if let Some(usage) = ev.usage {
+                        input_tokens = usage.prompt_tokens;
+                        output_tokens = usage.completion_tokens;
+                    }
+                    for choice in ev.choices {
+                        if let Some(reason) = choice.finish_reason.as_deref() {
+                            finish = match reason {
+                                "stop" => FinishReason::Stop,
+                                "length" => FinishReason::Length,
+                                "tool_calls" | "function_call" => FinishReason::ToolUse,
+                                "content_filter" => FinishReason::ContentFilter,
+                                other => FinishReason::Other(other.into()),
+                            };
+                        }
+                        if let Some(text) = choice.delta.content
+                            && !text.is_empty()
+                        {
+                            full_text.push_str(&text);
+                            let _ = tx.send(LlmStreamEvent::Delta(text)).await;
+                        }
+                    }
+                }
+            }
+
+            let done = LlmResponse {
+                content: Content::text(&full_text),
+                finish_reason: finish,
+                usage: LlmUsage {
+                    input_tokens,
+                    output_tokens,
+                },
+                metadata: serde_json::json!({}),
+            };
+            let _ = tx.send(LlmStreamEvent::Done(done)).await;
+        });
+
+        Ok(rx)
     }
 
     async fn embed(&self, model: &ModelRef, text: &str) -> rusvel_core::error::Result<Vec<f32>> {
@@ -180,6 +300,29 @@ struct OpenAiUsage {
     prompt_tokens: u32,
     #[serde(default)]
     completion_tokens: u32,
+}
+
+/// One SSE frame from `/v1/chat/completions?stream=true`.
+#[derive(Deserialize)]
+struct OpenAiStreamChunk {
+    #[serde(default)]
+    choices: Vec<OpenAiStreamChoice>,
+    #[serde(default)]
+    usage: Option<OpenAiUsage>,
+}
+
+#[derive(Deserialize)]
+struct OpenAiStreamChoice {
+    #[serde(default)]
+    delta: OpenAiStreamDelta,
+    #[serde(default)]
+    finish_reason: Option<String>,
+}
+
+#[derive(Default, Deserialize)]
+struct OpenAiStreamDelta {
+    #[serde(default)]
+    content: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -432,5 +575,109 @@ mod tests {
         let resp: OpenAiModelsResponse = serde_json::from_str(json).unwrap();
         assert_eq!(resp.data.len(), 2);
         assert_eq!(resp.data[0].id, "gpt-4o");
+    }
+
+    #[test]
+    fn stream_chunk_deserialize_delta() {
+        let s = r#"{"choices":[{"delta":{"content":"Hi"},"index":0,"finish_reason":null}]}"#;
+        let chunk: OpenAiStreamChunk = serde_json::from_str(s).unwrap();
+        assert_eq!(chunk.choices.len(), 1);
+        assert_eq!(chunk.choices[0].delta.content.as_deref(), Some("Hi"));
+        assert!(chunk.choices[0].finish_reason.is_none());
+    }
+
+    #[test]
+    fn stream_chunk_deserialize_finish_with_usage() {
+        let s = r#"{"choices":[{"delta":{},"index":0,"finish_reason":"stop"}],"usage":{"prompt_tokens":12,"completion_tokens":7,"total_tokens":19}}"#;
+        let chunk: OpenAiStreamChunk = serde_json::from_str(s).unwrap();
+        assert_eq!(chunk.choices[0].finish_reason.as_deref(), Some("stop"));
+        let u = chunk.usage.unwrap();
+        assert_eq!(u.prompt_tokens, 12);
+        assert_eq!(u.completion_tokens, 7);
+    }
+
+    /// Bind a TCP listener on a random port and serve one SSE response built
+    /// from `events` (each entry written as `data: <json>\n\n`, then `data: [DONE]`).
+    async fn spawn_sse_server(events: &'static [&'static str]) -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut buf = [0u8; 4096];
+            let mut total = Vec::new();
+            loop {
+                let n = sock.read(&mut buf).await.unwrap_or(0);
+                if n == 0 {
+                    break;
+                }
+                total.extend_from_slice(&buf[..n]);
+                if total.windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let mut header = String::new();
+            header.push_str("HTTP/1.1 200 OK\r\n");
+            header.push_str("Content-Type: text/event-stream\r\n");
+            header.push_str("Transfer-Encoding: chunked\r\n");
+            header.push_str("\r\n");
+            sock.write_all(header.as_bytes()).await.unwrap();
+
+            for ev in events {
+                let payload = format!("data: {ev}\n\n");
+                let bytes = payload.into_bytes();
+                let chunk_header = format!("{:x}\r\n", bytes.len());
+                sock.write_all(chunk_header.as_bytes()).await.unwrap();
+                sock.write_all(&bytes).await.unwrap();
+                sock.write_all(b"\r\n").await.unwrap();
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+            // Closing sentinel.
+            let done = b"data: [DONE]\n\n";
+            let chunk_header = format!("{:x}\r\n", done.len());
+            sock.write_all(chunk_header.as_bytes()).await.unwrap();
+            sock.write_all(done).await.unwrap();
+            sock.write_all(b"\r\n").await.unwrap();
+            sock.write_all(b"0\r\n\r\n").await.unwrap();
+            let _ = sock.shutdown().await;
+        });
+        format!("http://127.0.0.1:{port}")
+    }
+
+    #[tokio::test]
+    async fn stream_emits_deltas_and_done() {
+        let events: &[&str] = &[
+            r#"{"choices":[{"delta":{"role":"assistant","content":""},"index":0,"finish_reason":null}]}"#,
+            r#"{"choices":[{"delta":{"content":"Hello"},"index":0,"finish_reason":null}]}"#,
+            r#"{"choices":[{"delta":{"content":", "},"index":0,"finish_reason":null}]}"#,
+            r#"{"choices":[{"delta":{"content":"world!"},"index":0,"finish_reason":null}]}"#,
+            r#"{"choices":[{"delta":{},"index":0,"finish_reason":"stop"}]}"#,
+            r#"{"choices":[],"usage":{"prompt_tokens":11,"completion_tokens":3,"total_tokens":14}}"#,
+        ];
+        let url = spawn_sse_server(events).await;
+        let provider = OpenAiProvider::with_base_url("test-key", url);
+        let mut rx = provider.stream(sample_request()).await.unwrap();
+        let mut deltas = Vec::new();
+        let mut done_resp: Option<LlmResponse> = None;
+        while let Some(ev) = rx.recv().await {
+            match ev {
+                LlmStreamEvent::Delta(t) => deltas.push(t),
+                LlmStreamEvent::Done(r) => {
+                    done_resp = Some(r);
+                    break;
+                }
+                LlmStreamEvent::Error(e) => panic!("stream error: {e}"),
+                LlmStreamEvent::ToolUse { .. } => {}
+            }
+        }
+        assert_eq!(deltas, vec!["Hello", ", ", "world!"]);
+        let resp = done_resp.expect("missing Done event");
+        match &resp.content.parts[0] {
+            Part::Text(t) => assert_eq!(t, "Hello, world!"),
+            _ => panic!("expected text"),
+        }
+        assert_eq!(resp.usage.input_tokens, 11);
+        assert_eq!(resp.usage.output_tokens, 3);
+        assert_eq!(resp.finish_reason, FinishReason::Stop);
     }
 }

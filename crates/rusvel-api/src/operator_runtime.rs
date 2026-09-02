@@ -112,11 +112,13 @@ pub async fn put_operator_prefs(
     state
         .llm_multi
         .swap_provider(ModelProvider::Claude, provider);
-    state
-        .claude_transport_cli
-        .store(use_cli, Ordering::Relaxed);
+    state.claude_transport_cli.store(use_cli, Ordering::Relaxed);
 
-    let transport = if use_cli { "CLI (claude -p)" } else { "API (Messages)" };
+    let transport = if use_cli {
+        "CLI (claude -p)"
+    } else {
+        "API (Messages)"
+    };
     tracing::info!(target: "rusvel::llm", "hot-swapped Claude provider → {transport}");
 
     Ok(Json(json!({
@@ -192,9 +194,7 @@ pub async fn post_reexec(
             "shutdown is not wired for this server build".into(),
         ));
     };
-    state
-        .reexec_pending
-        .store(true, Ordering::SeqCst);
+    state.reexec_pending.store(true, Ordering::SeqCst);
     let _ = tx.send(true);
     Ok(Json(json!({
         "ok": true,

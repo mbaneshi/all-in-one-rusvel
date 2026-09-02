@@ -44,6 +44,17 @@ Settings UI: **Control center** at `/settings/control` (tab under Settings).
 
 Use this on shared or production-adjacent hosts so the DB browser cannot mutate data even with an admin bearer token.
 
+## Harvest demo preset
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `RUSVEL_DEMO` | (unset) | When set to `harvest`, the binary idempotently seeds a cron schedule named `harvest.demo.nightly_goal_loop` on boot. Schedule fires `harvest.auto_scan` with `goal_loop_top_n` in the payload so the worker enqueues top-N `ProposalDraft` jobs (each parks in `/api/approvals`). Requires at least one session to exist; otherwise the seed warns and skips. |
+| `RUSVEL_HARVEST_CRON` | `0 9 * * *` | 5-field cron expression for the demo schedule. Parsed by `rusvel_cron::parse_schedule`. |
+| `RUSVEL_HARVEST_TOP_N` | `3` | Number of top-scored opportunities per scan to convert into approval-gated `ProposalDraft` jobs. |
+| `RUSVEL_TELEGRAM_BOT_TOKEN` | (unset) | When set, each `ProposalDraft` held for approval triggers an outbound Telegram message via `rusvel_channel::TelegramChannel`. Pair with `RUSVEL_TELEGRAM_CHAT_ID` for the default recipient. |
+
+End-to-end flow: cron tick → `harvest.auto_scan` job → scan via `MockSource` → sort opportunities by score → enqueue top-N `ProposalDraft` jobs → each runs `HarvestEngine::generate_proposal` → `hold_for_approval` → optional Telegram ping → human hits `POST /api/approvals/{job_id}/approve`.
+
 ## Frontend (Vite / embedded SPA)
 
 | Variable | Purpose |

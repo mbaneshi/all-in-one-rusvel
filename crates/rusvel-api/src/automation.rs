@@ -22,7 +22,7 @@ pub fn worker_app_state() -> Option<Arc<AppState>> {
 }
 
 use rusvel_core::domain::{
-    AutomationTriggerAction, AutomationTriggerPayload, AUTOMATION_CRON_EVENT_KIND,
+    AUTOMATION_CRON_EVENT_KIND, AutomationTriggerAction, AutomationTriggerPayload,
 };
 use rusvel_core::error::RusvelError;
 
@@ -124,10 +124,7 @@ pub async fn dispatch_automation_trigger(
                 td.as_object_mut()
                     .map(|o| o.insert("department_id".into(), json!(dept)));
             }
-            let execution = engine
-                .run_flow(&fid, td)
-                .await
-                .map_err(|e| e.to_string())?;
+            let execution = engine.run_flow(&fid, td).await.map_err(|e| e.to_string())?;
             serde_json::to_value(&execution).map_err(|e| e.to_string())
         }
         AutomationTriggerAction::RunPlaybook => {
@@ -153,8 +150,8 @@ pub async fn upsert_automation_cron_schedule(
     trigger: AutomationTriggerPayload,
     enabled: bool,
 ) -> Result<Value, RusvelError> {
-    let payload = serde_json::to_value(&trigger)
-        .map_err(|e| RusvelError::Serialization(e.to_string()))?;
+    let payload =
+        serde_json::to_value(&trigger).map_err(|e| RusvelError::Serialization(e.to_string()))?;
     if let Some(id) = schedule_id.filter(|s| !s.trim().is_empty()) {
         let updated = state
             .cron_scheduler

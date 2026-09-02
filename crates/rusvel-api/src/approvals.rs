@@ -41,8 +41,7 @@ fn approval_terminal_fields(
 ) {
     let obj = meta.as_object();
     let g = |k: &str| {
-        obj
-            .and_then(|m| m.get(k))
+        obj.and_then(|m| m.get(k))
             .and_then(|v| v.as_str())
             .map(std::string::ToString::to_string)
     };
@@ -75,12 +74,8 @@ pub async fn list_pending(
     let out: Vec<PendingApprovalItem> = jobs
         .into_iter()
         .map(|job| {
-            let (
-                terminal_pane_id,
-                terminal_window_id,
-                terminal_dept_id,
-                terminal_context_snippet,
-            ) = approval_terminal_fields(&job.metadata);
+            let (terminal_pane_id, terminal_window_id, terminal_dept_id, terminal_context_snippet) =
+                approval_terminal_fields(&job.metadata);
             PendingApprovalItem {
                 job,
                 terminal_pane_id,

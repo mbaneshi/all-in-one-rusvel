@@ -129,6 +129,7 @@ impl ToolRegistry {
     /// Register a tool definition together with its async handler.
     ///
     /// If a tool with the same name already exists it is replaced.
+    #[allow(clippy::unused_async_trait_impl)]
     pub async fn register_with_handler(
         &self,
         definition: ToolDefinition,

@@ -40,14 +40,34 @@ fn computer_use_beta_header(tools: &[serde_json::Value]) -> Option<&'static str>
 /// Map UI shorthand (`sonnet`, `opus`, `haiku`) to Messages API model ids.
 fn normalize_claude_messages_api_model(model: &str) -> String {
     match model.trim() {
-        "" => "claude-sonnet-4-20250514".into(),
-        m if m.starts_with("claude-") && m.len() > 15 => m.to_string(),
-        "sonnet" => "claude-sonnet-4-20250514".into(),
-        "opus" => "claude-opus-4-20250514".into(),
-        "haiku" => "claude-haiku-4-20250414".into(),
+        "" => "claude-sonnet-5".into(),
+        "sonnet" => "claude-sonnet-5".into(),
+        "opus" => "claude-opus-5".into(),
+        "haiku" => "claude-haiku-4-5".into(),
+        m if m.starts_with("claude-") => m.to_string(),
         other => other.to_string(),
     }
 }
+
+/// Models that reject sampling params (`temperature`, `top_p`, `top_k`) with HTTP 400.
+///
+/// Opus 5 rejects them entirely; Sonnet 5 rejects non-default values. Older
+/// models (Haiku 4.5 and earlier) still accept them.
+fn model_rejects_sampling_params(model: &str) -> bool {
+    model.starts_with("claude-opus-5")
+        || model.starts_with("claude-sonnet-5")
+        || model.starts_with("claude-fable")
+}
+
+/// Request metadata key: set to `true` (or `"adaptive"`) to send `thinking: {"type": "adaptive"}`.
+///
+/// Opus 5 / Sonnet 5 default to adaptive thinking anyway, so this is only
+/// needed to be explicit. `budget_tokens` is not supported (HTTP 400 on
+/// current models).
+pub const CLAUDE_META_THINKING: &str = "claude.thinking";
+
+/// Request metadata key: effort level for `output_config` (`low`|`medium`|`high`|`xhigh`|`max`).
+pub const CLAUDE_META_EFFORT: &str = "claude.effort";
 
 // ════════════════════════════════════════════════════════════════════
 //  ClaudeProvider
@@ -167,9 +187,7 @@ impl LlmPort for ClaudeProvider {
                 return;
             }
 
-            let mut full_text = String::new();
-            let mut input_tokens: u32 = 0;
-            let mut output_tokens: u32 = 0;
+            let mut acc = ClaudeStreamAccumulator::default();
             let mut buf = String::new();
             let mut stream = http_resp.bytes_stream();
 
@@ -194,45 +212,16 @@ impl LlmPort for ClaudeProvider {
                         let Ok(ev) = serde_json::from_str::<serde_json::Value>(data) else {
                             continue;
                         };
-                        let typ = ev.get("type").and_then(|t| t.as_str());
-                        if typ == Some("content_block_delta") {
-                            if let Some(delta) = ev.get("delta") {
-                                if delta.get("type").and_then(|t| t.as_str()) == Some("text_delta")
-                                {
-                                    if let Some(text) = delta.get("text").and_then(|t| t.as_str()) {
-                                        full_text.push_str(text);
-                                        let _ =
-                                            tx.send(LlmStreamEvent::Delta(text.to_string())).await;
-                                    }
-                                }
-                            }
-                        } else if typ == Some("message_delta") {
-                            if let Some(u) = ev.get("usage") {
-                                if let Some(ot) = u.get("output_tokens").and_then(|v| v.as_u64()) {
-                                    output_tokens = ot as u32;
-                                }
-                            }
-                        } else if typ == Some("message_start") {
-                            if let Some(u) = ev.get("message").and_then(|m| m.get("usage")) {
-                                if let Some(it) = u.get("input_tokens").and_then(|v| v.as_u64()) {
-                                    input_tokens = it as u32;
-                                }
+                        for out in acc.handle_event(&ev) {
+                            if tx.send(out).await.is_err() {
+                                return;
                             }
                         }
                     }
                 }
             }
 
-            let done = LlmResponse {
-                content: Content::text(&full_text),
-                finish_reason: FinishReason::Stop,
-                usage: LlmUsage {
-                    input_tokens,
-                    output_tokens,
-                },
-                metadata: serde_json::json!({}),
-            };
-            let _ = tx.send(LlmStreamEvent::Done(done)).await;
+            let _ = tx.send(LlmStreamEvent::Done(acc.into_response())).await;
         });
 
         Ok(rx)
@@ -246,11 +235,9 @@ impl LlmPort for ClaudeProvider {
 
     async fn list_models(&self) -> rusvel_core::error::Result<Vec<ModelRef>> {
         Ok(vec![
-            model_ref("claude-sonnet-4-20250514"),
-            model_ref("claude-haiku-4-20250414"),
-            model_ref("claude-opus-4-20250514"),
-            model_ref("claude-3-5-sonnet-20241022"),
-            model_ref("claude-3-5-haiku-20241022"),
+            model_ref("claude-opus-5"),
+            model_ref("claude-sonnet-5"),
+            model_ref("claude-haiku-4-5"),
         ])
     }
 
@@ -270,6 +257,51 @@ fn model_ref(name: &str) -> ModelRef {
     }
 }
 
+/// Accumulates token usage across streaming SSE events.
+#[derive(Debug, Default, Clone, Copy)]
+#[allow(clippy::struct_field_names)] // field names mirror the wire format
+struct StreamUsageAcc {
+    input_tokens: u32,
+    output_tokens: u32,
+    cache_creation_input_tokens: u64,
+    cache_read_input_tokens: u64,
+}
+
+impl StreamUsageAcc {
+    /// Fold usage from one streaming event.
+    ///
+    /// Anthropic-native streams report input/cache tokens on `message_start`
+    /// and cumulative output tokens on `message_delta`. Some gateways (e.g.
+    /// AvalAI) report zeros on `message_start` and the real totals in the
+    /// final `message_delta` usage instead — so any later nonzero value wins,
+    /// while zeros never overwrite an earlier real count.
+    fn apply_event(&mut self, ev: &serde_json::Value) {
+        let usage = match ev.get("type").and_then(|t| t.as_str()) {
+            Some("message_start") => ev.pointer("/message/usage"),
+            Some("message_delta") => ev.get("usage"),
+            _ => None,
+        };
+        let Some(u) = usage else { return };
+        let get = |key: &str| {
+            u.get(key)
+                .and_then(serde_json::Value::as_u64)
+                .filter(|&n| n > 0)
+        };
+        if let Some(it) = get("input_tokens") {
+            self.input_tokens = it as u32;
+        }
+        if let Some(ot) = get("output_tokens") {
+            self.output_tokens = ot as u32;
+        }
+        if let Some(cc) = get("cache_creation_input_tokens") {
+            self.cache_creation_input_tokens = cc;
+        }
+        if let Some(cr) = get("cache_read_input_tokens") {
+            self.cache_read_input_tokens = cr;
+        }
+    }
+}
+
 // ════════════════════════════════════════════════════════════════════
 //  Claude wire types
 // ════════════════════════════════════════════════════════════════════
@@ -285,6 +317,12 @@ struct ClaudeRequest {
     system: Option<Vec<serde_json::Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f64>,
+    /// `{"type": "adaptive"}` when enabled — `budget_tokens` is rejected on current models.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thinking: Option<serde_json::Value>,
+    /// `{"effort": "low"|"medium"|"high"|"xhigh"|"max"}` when set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_config: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     tools: Vec<serde_json::Value>,
 }
@@ -306,11 +344,209 @@ struct ClaudeResponse {
 }
 
 #[derive(Default, Deserialize)]
+#[allow(clippy::struct_field_names)]
 struct ClaudeUsage {
     #[serde(default)]
     input_tokens: u32,
     #[serde(default)]
     output_tokens: u32,
+    /// Tokens written to the prompt cache (~1.25x input price).
+    #[serde(default)]
+    cache_creation_input_tokens: u64,
+    /// Tokens served from the prompt cache (~0.1x input price).
+    #[serde(default)]
+    cache_read_input_tokens: u64,
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  Streaming accumulator
+// ════════════════════════════════════════════════════════════════════
+
+/// One in-flight content block from a Claude SSE stream, keyed by block index.
+enum StreamBlock {
+    Text(String),
+    ToolUse {
+        id: String,
+        name: String,
+        partial_json: String,
+    },
+    /// Blocks we do not surface (e.g. `thinking`).
+    Ignored,
+}
+
+/// Accumulates Claude streaming SSE events into [`LlmStreamEvent`]s and a
+/// final [`LlmResponse`].
+///
+/// Tracks content blocks by index (`text` and `tool_use`), the terminal
+/// `stop_reason` from `message_delta`, and usage counters. Historically the
+/// stream path dropped `tool_use` blocks and hardcoded
+/// [`FinishReason::Stop`], which made agent runs that ended in a tool call
+/// (or truncation) look like clean empty completions (#12).
+#[derive(Default)]
+struct ClaudeStreamAccumulator {
+    blocks: std::collections::BTreeMap<u64, StreamBlock>,
+    stop_reason: Option<String>,
+    /// Usage folded from `message_start` + `message_delta` (nonzero-wins —
+    /// gateways like AvalAI report zeros early and real totals late).
+    usage: StreamUsageAcc,
+}
+
+impl ClaudeStreamAccumulator {
+    /// Process one parsed SSE `data:` JSON event, returning events to forward.
+    fn handle_event(&mut self, ev: &serde_json::Value) -> Vec<LlmStreamEvent> {
+        let mut out = Vec::new();
+        let index = ev.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
+        match ev.get("type").and_then(|t| t.as_str()) {
+            Some("content_block_start") => {
+                let block = ev.get("content_block");
+                let ty = block
+                    .and_then(|b| b.get("type"))
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("");
+                let entry = match ty {
+                    "text" => StreamBlock::Text(
+                        block
+                            .and_then(|b| b.get("text"))
+                            .and_then(|t| t.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                    ),
+                    "tool_use" | "server_tool_use" => StreamBlock::ToolUse {
+                        id: block
+                            .and_then(|b| b.get("id"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        name: block
+                            .and_then(|b| b.get("name"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        partial_json: String::new(),
+                    },
+                    _ => StreamBlock::Ignored,
+                };
+                self.blocks.insert(index, entry);
+            }
+            Some("content_block_delta") => {
+                let delta = ev.get("delta");
+                match delta.and_then(|d| d.get("type")).and_then(|t| t.as_str()) {
+                    Some("text_delta") => {
+                        if let Some(text) =
+                            delta.and_then(|d| d.get("text")).and_then(|t| t.as_str())
+                        {
+                            match self
+                                .blocks
+                                .entry(index)
+                                .or_insert_with(|| StreamBlock::Text(String::new()))
+                            {
+                                StreamBlock::Text(t) => t.push_str(text),
+                                _ => {}
+                            }
+                            out.push(LlmStreamEvent::Delta(text.to_string()));
+                        }
+                    }
+                    Some("input_json_delta") => {
+                        if let Some(pj) = delta
+                            .and_then(|d| d.get("partial_json"))
+                            .and_then(|t| t.as_str())
+                        {
+                            if let Some(StreamBlock::ToolUse { partial_json, .. }) =
+                                self.blocks.get_mut(&index)
+                            {
+                                partial_json.push_str(pj);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Some("content_block_stop") => {
+                if let Some(StreamBlock::ToolUse {
+                    id,
+                    name,
+                    partial_json,
+                }) = self.blocks.get(&index)
+                {
+                    out.push(LlmStreamEvent::ToolUse {
+                        id: id.clone(),
+                        name: name.clone(),
+                        args: parse_tool_input_json(partial_json),
+                    });
+                }
+            }
+            Some("message_delta") => {
+                if let Some(sr) = ev
+                    .get("delta")
+                    .and_then(|d| d.get("stop_reason"))
+                    .and_then(|v| v.as_str())
+                {
+                    self.stop_reason = Some(sr.to_string());
+                }
+                self.usage.apply_event(ev);
+            }
+            Some("message_start") => {
+                self.usage.apply_event(ev);
+            }
+            _ => {}
+        }
+        out
+    }
+
+    /// Build the aggregated terminal [`LlmResponse`].
+    fn into_response(self) -> LlmResponse {
+        let mut parts = Vec::new();
+        let mut has_tool_call = false;
+        for (_, block) in self.blocks {
+            match block {
+                StreamBlock::Text(t) => {
+                    if !t.is_empty() {
+                        parts.push(Part::Text(t));
+                    }
+                }
+                StreamBlock::ToolUse {
+                    id,
+                    name,
+                    partial_json,
+                } => {
+                    has_tool_call = true;
+                    parts.push(Part::ToolCall {
+                        id,
+                        name,
+                        args: parse_tool_input_json(&partial_json),
+                    });
+                }
+                StreamBlock::Ignored => {}
+            }
+        }
+        // A missing stop_reason (e.g. truncated stream) falls back on the
+        // shape of the content so tool calls are never mistaken for Stop.
+        let finish_reason = match self.stop_reason.as_deref() {
+            Some(sr) => finish_reason_from_stop(sr),
+            None if has_tool_call => FinishReason::ToolUse,
+            None => FinishReason::Stop,
+        };
+        LlmResponse {
+            content: Content { parts },
+            finish_reason,
+            usage: LlmUsage {
+                input_tokens: self.usage.input_tokens,
+                output_tokens: self.usage.output_tokens,
+            },
+            metadata: serde_json::json!({
+                "cache_creation_input_tokens": self.usage.cache_creation_input_tokens,
+                "cache_read_input_tokens": self.usage.cache_read_input_tokens,
+            }),
+        }
+    }
+}
+
+/// Parse accumulated `input_json_delta` fragments; empty input means `{}`.
+fn parse_tool_input_json(partial_json: &str) -> serde_json::Value {
+    if partial_json.trim().is_empty() {
+        return serde_json::json!({});
+    }
+    serde_json::from_str(partial_json).unwrap_or_else(|_| serde_json::json!({}))
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -560,12 +796,34 @@ fn to_claude_request(req: &LlmRequest) -> ClaudeRequest {
         }
     }
 
+    let model = normalize_claude_messages_api_model(&req.model.model);
+    let temperature = if model_rejects_sampling_params(&model) {
+        None
+    } else {
+        req.temperature
+    };
+    let thinking = match req.metadata.get(CLAUDE_META_THINKING) {
+        Some(serde_json::Value::Bool(true)) => Some(serde_json::json!({"type": "adaptive"})),
+        Some(serde_json::Value::String(s)) if s == "adaptive" => {
+            Some(serde_json::json!({"type": "adaptive"}))
+        }
+        _ => None,
+    };
+    let output_config = req
+        .metadata
+        .get(CLAUDE_META_EFFORT)
+        .and_then(|v| v.as_str())
+        .filter(|e| matches!(*e, "low" | "medium" | "high" | "xhigh" | "max"))
+        .map(|e| serde_json::json!({"effort": e}));
+
     ClaudeRequest {
-        model: normalize_claude_messages_api_model(&req.model.model),
+        model,
         messages,
-        max_tokens: req.max_tokens.unwrap_or(4096),
+        max_tokens: req.max_tokens.unwrap_or(8192),
         system,
-        temperature: req.temperature,
+        temperature,
+        thinking,
+        output_config,
         tools: req.tools.clone(),
     }
 }
@@ -580,10 +838,7 @@ fn from_claude_response(resp: ClaudeResponse) -> LlmResponse {
     }
 
     let finish_reason = match resp.stop_reason.as_deref() {
-        Some("end_turn" | "stop") => FinishReason::Stop,
-        Some("max_tokens") => FinishReason::Length,
-        Some("tool_use") => FinishReason::ToolUse,
-        Some(other) => FinishReason::Other(other.into()),
+        Some(sr) => finish_reason_from_stop(sr),
         None => FinishReason::Other("unknown".into()),
     };
 
@@ -594,7 +849,20 @@ fn from_claude_response(resp: ClaudeResponse) -> LlmResponse {
             input_tokens: resp.usage.input_tokens,
             output_tokens: resp.usage.output_tokens,
         },
-        metadata: serde_json::json!({}),
+        metadata: serde_json::json!({
+            "cache_creation_input_tokens": resp.usage.cache_creation_input_tokens,
+            "cache_read_input_tokens": resp.usage.cache_read_input_tokens,
+        }),
+    }
+}
+
+/// Map a Claude `stop_reason` string to a [`FinishReason`].
+fn finish_reason_from_stop(stop_reason: &str) -> FinishReason {
+    match stop_reason {
+        "end_turn" | "stop" => FinishReason::Stop,
+        "max_tokens" => FinishReason::Length,
+        "tool_use" => FinishReason::ToolUse,
+        other => FinishReason::Other(other.into()),
     }
 }
 
@@ -911,7 +1179,7 @@ mod tests {
         LlmRequest {
             model: ModelRef {
                 provider: ModelProvider::Claude,
-                model: "claude-sonnet-4-20250514".into(),
+                model: "claude-sonnet-5".into(),
             },
             messages: vec![
                 LlmMessage {
@@ -967,6 +1235,68 @@ mod tests {
     }
 
     #[test]
+    fn normalize_model_maps_shorthands_and_passthrough() {
+        assert_eq!(normalize_claude_messages_api_model(""), "claude-sonnet-5");
+        assert_eq!(
+            normalize_claude_messages_api_model("sonnet"),
+            "claude-sonnet-5"
+        );
+        assert_eq!(normalize_claude_messages_api_model("opus"), "claude-opus-5");
+        assert_eq!(
+            normalize_claude_messages_api_model("haiku"),
+            "claude-haiku-4-5"
+        );
+        // Short current ids must pass through unmangled.
+        assert_eq!(
+            normalize_claude_messages_api_model("claude-opus-5"),
+            "claude-opus-5"
+        );
+        assert_eq!(
+            normalize_claude_messages_api_model("claude-haiku-4-5"),
+            "claude-haiku-4-5"
+        );
+    }
+
+    #[test]
+    fn to_claude_request_strips_sampling_params_for_current_models() {
+        // Sonnet 5 / Opus 5 reject temperature with HTTP 400 — must be omitted.
+        let req = sample_request();
+        assert_eq!(req.temperature, Some(0.7));
+        let wire = to_claude_request(&req);
+        assert!(wire.temperature.is_none());
+    }
+
+    #[test]
+    fn to_claude_request_keeps_temperature_for_older_models() {
+        let mut req = sample_request();
+        req.model.model = "claude-haiku-4-5".into();
+        let wire = to_claude_request(&req);
+        assert_eq!(wire.temperature, Some(0.7));
+    }
+
+    #[test]
+    fn to_claude_request_thinking_and_effort_from_metadata() {
+        let mut req = sample_request();
+        req.metadata = serde_json::json!({
+            CLAUDE_META_THINKING: true,
+            CLAUDE_META_EFFORT: "high",
+        });
+        let wire = to_claude_request(&req);
+        assert_eq!(wire.thinking, Some(serde_json::json!({"type": "adaptive"})));
+        assert_eq!(
+            wire.output_config,
+            Some(serde_json::json!({"effort": "high"}))
+        );
+    }
+
+    #[test]
+    fn to_claude_request_omits_thinking_and_effort_by_default() {
+        let wire = to_claude_request(&sample_request());
+        assert!(wire.thinking.is_none());
+        assert!(wire.output_config.is_none());
+    }
+
+    #[test]
     fn to_claude_request_sets_max_tokens() {
         let req = sample_request();
         let wire = to_claude_request(&req);
@@ -978,7 +1308,8 @@ mod tests {
         let mut req = sample_request();
         req.max_tokens = None;
         let wire = to_claude_request(&req);
-        assert_eq!(wire.max_tokens, 4096);
+        // 8192 leaves headroom for thinking-enabled models.
+        assert_eq!(wire.max_tokens, 8192);
     }
 
     #[test]
@@ -992,6 +1323,7 @@ mod tests {
             usage: ClaudeUsage {
                 input_tokens: 10,
                 output_tokens: 5,
+                ..ClaudeUsage::default()
             },
         };
         let llm_resp = from_claude_response(resp);
@@ -1071,7 +1403,7 @@ mod tests {
         let req = LlmRequest {
             model: ModelRef {
                 provider: ModelProvider::Claude,
-                model: "claude-sonnet-4-20250514".into(),
+                model: "claude-sonnet-5".into(),
             },
             messages: vec![LlmMessage {
                 role: LlmRole::Tool,
@@ -1127,6 +1459,191 @@ mod tests {
         let models = rt.block_on(provider.list_models()).unwrap();
         assert!(models.len() >= 3);
         assert!(models.iter().all(|m| m.provider == ModelProvider::Claude));
+    }
+
+    // ── Streaming accumulator (#12: dept chat empty output) ──────
+
+    fn feed(acc: &mut ClaudeStreamAccumulator, evs: &[serde_json::Value]) -> Vec<LlmStreamEvent> {
+        let mut out = Vec::new();
+        for ev in evs {
+            out.extend(acc.handle_event(ev));
+        }
+        out
+    }
+
+    #[test]
+    fn stream_accumulator_text_flow() {
+        let mut acc = ClaudeStreamAccumulator::default();
+        let emitted = feed(
+            &mut acc,
+            &[
+                serde_json::json!({"type": "message_start", "message": {"usage": {"input_tokens": 12}}}),
+                serde_json::json!({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}),
+                serde_json::json!({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hello "}}),
+                serde_json::json!({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "world"}}),
+                serde_json::json!({"type": "content_block_stop", "index": 0}),
+                serde_json::json!({"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 7}}),
+            ],
+        );
+        let deltas: Vec<&str> = emitted
+            .iter()
+            .filter_map(|e| match e {
+                LlmStreamEvent::Delta(t) => Some(t.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(deltas, vec!["Hello ", "world"]);
+
+        let resp = acc.into_response();
+        assert_eq!(resp.finish_reason, FinishReason::Stop);
+        assert_eq!(resp.usage.input_tokens, 12);
+        assert_eq!(resp.usage.output_tokens, 7);
+        match &resp.content.parts[0] {
+            Part::Text(t) => assert_eq!(t, "Hello world"),
+            other => panic!("expected text, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn stream_accumulator_tool_use_flow() {
+        // A run that ends in a tool call must surface the ToolCall part and
+        // FinishReason::ToolUse — previously it produced an empty Stop
+        // response, which the agent loop reported as a clean completion.
+        let mut acc = ClaudeStreamAccumulator::default();
+        let emitted = feed(
+            &mut acc,
+            &[
+                serde_json::json!({"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use", "id": "toolu_1", "name": "finance_add_entry", "input": {}}}),
+                serde_json::json!({"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": "{\"amount_usd\":"}}),
+                serde_json::json!({"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": "50}"}}),
+                serde_json::json!({"type": "content_block_stop", "index": 0}),
+                serde_json::json!({"type": "message_delta", "delta": {"stop_reason": "tool_use"}, "usage": {"output_tokens": 40}}),
+            ],
+        );
+        match emitted.last() {
+            Some(LlmStreamEvent::ToolUse { id, name, args }) => {
+                assert_eq!(id, "toolu_1");
+                assert_eq!(name, "finance_add_entry");
+                assert_eq!(args, &serde_json::json!({"amount_usd": 50}));
+            }
+            other => panic!("expected ToolUse event, got {other:?}"),
+        }
+
+        let resp = acc.into_response();
+        assert_eq!(resp.finish_reason, FinishReason::ToolUse);
+        match &resp.content.parts[0] {
+            Part::ToolCall { id, name, args } => {
+                assert_eq!(id, "toolu_1");
+                assert_eq!(name, "finance_add_entry");
+                assert_eq!(args, &serde_json::json!({"amount_usd": 50}));
+            }
+            other => panic!("expected ToolCall part, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn stream_accumulator_thinking_then_tool_use_preserves_order() {
+        let mut acc = ClaudeStreamAccumulator::default();
+        feed(
+            &mut acc,
+            &[
+                serde_json::json!({"type": "content_block_start", "index": 0, "content_block": {"type": "thinking"}}),
+                serde_json::json!({"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "hmm"}}),
+                serde_json::json!({"type": "content_block_stop", "index": 0}),
+                serde_json::json!({"type": "content_block_start", "index": 1, "content_block": {"type": "text", "text": ""}}),
+                serde_json::json!({"type": "content_block_delta", "index": 1, "delta": {"type": "text_delta", "text": "Adding it now."}}),
+                serde_json::json!({"type": "content_block_stop", "index": 1}),
+                serde_json::json!({"type": "content_block_start", "index": 2, "content_block": {"type": "tool_use", "id": "toolu_2", "name": "t", "input": {}}}),
+                serde_json::json!({"type": "content_block_stop", "index": 2}),
+                serde_json::json!({"type": "message_delta", "delta": {"stop_reason": "tool_use"}}),
+            ],
+        );
+        let resp = acc.into_response();
+        assert_eq!(resp.finish_reason, FinishReason::ToolUse);
+        assert_eq!(resp.content.parts.len(), 2); // thinking block dropped
+        assert!(matches!(&resp.content.parts[0], Part::Text(t) if t == "Adding it now."));
+        assert!(matches!(&resp.content.parts[1], Part::ToolCall { .. }));
+    }
+
+    #[test]
+    fn stream_accumulator_max_tokens_maps_to_length() {
+        let mut acc = ClaudeStreamAccumulator::default();
+        feed(
+            &mut acc,
+            &[
+                serde_json::json!({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}),
+                serde_json::json!({"type": "message_delta", "delta": {"stop_reason": "max_tokens"}, "usage": {"output_tokens": 200}}),
+            ],
+        );
+        let resp = acc.into_response();
+        assert_eq!(resp.finish_reason, FinishReason::Length);
+        assert!(resp.content.parts.is_empty());
+    }
+
+    #[test]
+    fn stream_accumulator_missing_stop_reason_with_tool_call_is_tool_use() {
+        let mut acc = ClaudeStreamAccumulator::default();
+        feed(
+            &mut acc,
+            &[
+                serde_json::json!({"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use", "id": "x", "name": "y", "input": {}}}),
+            ],
+        );
+        assert_eq!(acc.into_response().finish_reason, FinishReason::ToolUse);
+    }
+
+    #[test]
+    fn stream_usage_anthropic_native_event_order() {
+        // Native API: input + cache tokens on message_start, output on message_delta.
+        let mut acc = StreamUsageAcc::default();
+        acc.apply_event(&serde_json::json!({
+            "type": "message_start",
+            "message": {"usage": {"input_tokens": 25, "output_tokens": 1,
+                "cache_creation_input_tokens": 7, "cache_read_input_tokens": 3}}
+        }));
+        acc.apply_event(&serde_json::json!({
+            "type": "message_delta",
+            "delta": {"stop_reason": "end_turn"},
+            "usage": {"output_tokens": 13}
+        }));
+        assert_eq!(acc.input_tokens, 25);
+        assert_eq!(acc.output_tokens, 13);
+        assert_eq!(acc.cache_creation_input_tokens, 7);
+        assert_eq!(acc.cache_read_input_tokens, 3);
+    }
+
+    #[test]
+    fn stream_usage_gateway_reports_totals_in_message_delta() {
+        // AvalAI-style gateway: zeros in message_start, real usage in the
+        // final message_delta (observed live against api.avalai.ir).
+        let mut acc = StreamUsageAcc::default();
+        acc.apply_event(&serde_json::json!({
+            "type": "message_start",
+            "message": {"usage": {"input_tokens": 0, "output_tokens": 0,
+                "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}}
+        }));
+        acc.apply_event(&serde_json::json!({
+            "type": "message_delta",
+            "delta": {"stop_reason": "end_turn"},
+            "usage": {"input_tokens": 9, "output_tokens": 16}
+        }));
+        assert_eq!(acc.input_tokens, 9);
+        assert_eq!(acc.output_tokens, 16);
+    }
+
+    #[test]
+    fn stream_usage_zero_never_overwrites_real_count() {
+        let mut acc = StreamUsageAcc::default();
+        acc.apply_event(&serde_json::json!({
+            "type": "message_start",
+            "message": {"usage": {"input_tokens": 25}}
+        }));
+        acc.apply_event(&serde_json::json!({
+            "type": "message_delta",
+            "usage": {"input_tokens": 0, "output_tokens": 13}
+        }));
+        assert_eq!(acc.input_tokens, 25);
+        assert_eq!(acc.output_tokens, 13);
     }
 
     #[test]

@@ -150,10 +150,8 @@ impl InvoiceManager {
                 let mut inv: Invoice = serde_json::from_value(v)?;
                 inv.status = new_status.clone();
                 match new_status {
-                    InvoiceStatus::Paid => {
-                        if inv.paid_at.is_none() {
-                            inv.paid_at = Some(Utc::now());
-                        }
+                    InvoiceStatus::Paid if inv.paid_at.is_none() => {
+                        inv.paid_at = Some(Utc::now());
                     }
                     _ => {}
                 }

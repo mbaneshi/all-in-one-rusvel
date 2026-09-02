@@ -6494,6 +6494,7 @@ dependencies = [
  "rusvel-embed",
  "rusvel-engine-tools",
  "rusvel-event",
+ "rusvel-jobs",
  "rusvel-llm",
  "rusvel-mcp",
  "rusvel-memory",
@@ -6692,6 +6693,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusvel-evals"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "clap",
+ "code-engine",
+ "content-engine",
+ "flow-engine",
+ "forge-engine",
+ "harvest-engine",
+ "rusvel-core",
+ "rusvel-db",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "rusvel-event"
 version = "0.1.0"
 dependencies = [
@@ -6713,9 +6737,12 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
+ "rusqlite",
  "rusvel-core",
+ "rusvel-db",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "uuid",

@@ -253,10 +253,8 @@ pub fn parse_order_column_spec(s: &str) -> Result<(String, bool)> {
                     return Ok((col.to_string(), false));
                 }
             }
-            "desc" => {
-                if SchemaIntrospector::validate_column_name(col) {
-                    return Ok((col.to_string(), true));
-                }
+            "desc" if SchemaIntrospector::validate_column_name(col) => {
+                return Ok((col.to_string(), true));
             }
             _ => {}
         }

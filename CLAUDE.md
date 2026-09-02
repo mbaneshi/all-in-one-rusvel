@@ -23,6 +23,7 @@ cargo run -- growth list       # List department items
 **Runtime security & env:** HTTP bind, API tokens, DB SQL lock, MCP auth, `VITE_RUSVEL_API_TOKEN` — see [`docs/operators/security-hardening.md`](docs/operators/security-hardening.md).
 
 - **`RUSVEL_DB_SQL_WRITE`:** Set to `0`, `false`, or `off` to force read-only SQL for [`RusvelBasePort::execute_sql`](crates/rusvel-db/src/browser.rs) (`PRAGMA query_only`), regardless of client `read_only: false` on `POST /api/db/sql`.
+- **`RUSVEL_DEMO=harvest`:** On boot, idempotently seed a cron schedule (`harvest.demo.nightly_goal_loop`) that fires `harvest.auto_scan` daily. The worker scans via `MockSource`, takes top-N opportunities by score, and enqueues `ProposalDraft` jobs that park in `/api/approvals`. When `RUSVEL_TELEGRAM_BOT_TOKEN` is set, each held proposal triggers a Telegram notify. Tunables: `RUSVEL_HARVEST_CRON` (default `0 9 * * *`), `RUSVEL_HARVEST_TOP_N` (default `3`). See [`docs/operators/security-hardening.md`](docs/operators/security-hardening.md#harvest-demo-preset).
 
 ## Architecture
 
@@ -234,6 +235,7 @@ sse_helpers (crate-internal), system, terminal, visual_report, webhooks, workflo
 ## Claude Code Tooling
 
 Custom agents, skills, and rules in `.claude/`. See `docs/claude-code-tooling.md` for details.
+For multi-tab parallel orchestration (Claude flags, zellij actions, gh project, the `scripts/orchestrate.sh` helper), see [`docs/contributing/orchestration-toolkit.md`](docs/contributing/orchestration-toolkit.md).
 
 **Subagents** (`@name` to invoke):
 - `@researcher` — research crates, patterns, LLM integrations before implementation

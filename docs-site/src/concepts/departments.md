@@ -87,5 +87,5 @@ Configure via the Settings page or the API:
 ```bash
 curl -X PUT http://localhost:3000/api/dept/code/config \
   -H "Content-Type: application/json" \
-  -d '{"model": "claude-sonnet-4-20250514", "effort": "high"}'
+  -d '{"model": "claude-sonnet-5", "effort": "high"}'
 ```

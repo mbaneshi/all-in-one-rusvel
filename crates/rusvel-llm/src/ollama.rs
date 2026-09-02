@@ -1,12 +1,13 @@
 //! Ollama HTTP adapter implementing [`LlmPort`].
 
 use async_trait::async_trait;
+use futures::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
 use rusvel_core::domain::*;
-use rusvel_core::error::RusvelError;
+use rusvel_core::error::{Result, RusvelError};
 use rusvel_core::ports::LlmPort;
 
 // ════════════════════════════════════════════════════════════════════
@@ -72,6 +73,100 @@ impl LlmPort for OllamaProvider {
         let ollama_resp: OllamaChatResponse = http_resp.json().await.map_err(map_reqwest_error)?;
 
         Ok(from_ollama_chat(ollama_resp))
+    }
+
+    async fn stream(
+        &self,
+        request: LlmRequest,
+    ) -> Result<tokio::sync::mpsc::Receiver<LlmStreamEvent>> {
+        let mut ollama_req = to_ollama_chat(&request);
+        ollama_req.stream = true;
+        let url = format!("{}/api/chat", self.base_url);
+        let client = self.client.clone();
+
+        debug!(model = %request.model.model, "ollama stream");
+
+        let (tx, rx) = tokio::sync::mpsc::channel(128);
+
+        tokio::spawn(async move {
+            let http_resp = match client.post(&url).json(&ollama_req).send().await {
+                Ok(r) => r,
+                Err(e) => {
+                    let _ = tx
+                        .send(LlmStreamEvent::Error(map_reqwest_error(e).to_string()))
+                        .await;
+                    return;
+                }
+            };
+
+            let status = http_resp.status();
+            if !status.is_success() {
+                let body = http_resp.text().await.unwrap_or_default();
+                let _ = tx
+                    .send(LlmStreamEvent::Error(
+                        map_ollama_http_error(status.as_u16(), &body).to_string(),
+                    ))
+                    .await;
+                return;
+            }
+
+            let mut full_text = String::new();
+            let mut input_tokens: u32 = 0;
+            let mut output_tokens: u32 = 0;
+            let mut finish = FinishReason::Stop;
+            let mut buf = String::new();
+            let mut bytes = http_resp.bytes_stream();
+
+            while let Some(chunk) = bytes.next().await {
+                let chunk = match chunk {
+                    Ok(c) => c,
+                    Err(e) => {
+                        let _ = tx.send(LlmStreamEvent::Error(e.to_string())).await;
+                        return;
+                    }
+                };
+                buf.push_str(&String::from_utf8_lossy(&chunk));
+                while let Some(pos) = buf.find('\n') {
+                    let line = buf[..pos].trim_end_matches('\r').to_string();
+                    buf.drain(..=pos);
+                    let line = line.trim();
+                    if line.is_empty() {
+                        continue;
+                    }
+                    let Ok(ev) = serde_json::from_str::<OllamaStreamChunk>(line) else {
+                        continue;
+                    };
+                    if !ev.message.content.is_empty() {
+                        full_text.push_str(&ev.message.content);
+                        let _ = tx.send(LlmStreamEvent::Delta(ev.message.content)).await;
+                    }
+                    if ev.done {
+                        input_tokens = ev.prompt_eval_count;
+                        output_tokens = ev.eval_count;
+                        if let Some(reason) = ev.done_reason.as_deref() {
+                            finish = match reason {
+                                "stop" => FinishReason::Stop,
+                                "length" => FinishReason::Length,
+                                other => FinishReason::Other(other.into()),
+                            };
+                        }
+                    }
+                }
+            }
+
+            let done = LlmResponse {
+                content: Content::text(&full_text),
+                finish_reason: finish,
+                usage: LlmUsage {
+                    input_tokens,
+                    output_tokens,
+                },
+                metadata: serde_json::json!({}),
+            };
+            let _ = tx.send(LlmStreamEvent::Done(done)).await;
+        });
+
+        Ok(rx)
     }
 
     async fn embed(&self, model: &ModelRef, text: &str) -> rusvel_core::error::Result<Vec<f32>> {
@@ -170,6 +265,21 @@ struct OllamaChatResponse {
     message: OllamaMessage,
     #[serde(default)]
     done: bool,
+    #[serde(default)]
+    eval_count: u32,
+    #[serde(default)]
+    prompt_eval_count: u32,
+}
+
+/// One NDJSON frame from `/api/chat?stream=true`.
+#[derive(Deserialize)]
+struct OllamaStreamChunk {
+    #[serde(default)]
+    message: OllamaMessage,
+    #[serde(default)]
+    done: bool,
+    #[serde(default)]
+    done_reason: Option<String>,
     #[serde(default)]
     eval_count: u32,
     #[serde(default)]
@@ -479,5 +589,108 @@ mod tests {
             msg.contains("connect") || msg.contains("Ollama"),
             "unexpected error: {msg}"
         );
+    }
+
+    #[test]
+    fn stream_chunk_deserialize_delta() {
+        let line =
+            r#"{"model":"llama3","message":{"role":"assistant","content":"He"},"done":false}"#;
+        let chunk: OllamaStreamChunk = serde_json::from_str(line).unwrap();
+        assert!(!chunk.done);
+        assert_eq!(chunk.message.content, "He");
+    }
+
+    #[test]
+    fn stream_chunk_deserialize_done() {
+        let line = r#"{"model":"llama3","message":{"role":"assistant","content":""},"done":true,"done_reason":"stop","prompt_eval_count":7,"eval_count":4}"#;
+        let chunk: OllamaStreamChunk = serde_json::from_str(line).unwrap();
+        assert!(chunk.done);
+        assert_eq!(chunk.done_reason.as_deref(), Some("stop"));
+        assert_eq!(chunk.prompt_eval_count, 7);
+        assert_eq!(chunk.eval_count, 4);
+    }
+
+    /// Bind a TCP listener on a random port, hand back the URL.
+    /// The closure receives the TCP listener and serves one request, writing
+    /// the supplied raw HTTP body bytes back as the response.
+    async fn spawn_ndjson_server(body: &'static [u8]) -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut buf = [0u8; 4096];
+            // Read until \r\n\r\n (end of headers + small body).
+            let mut total = Vec::new();
+            loop {
+                let n = sock.read(&mut buf).await.unwrap_or(0);
+                if n == 0 {
+                    break;
+                }
+                total.extend_from_slice(&buf[..n]);
+                if total.windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            // Write a chunked HTTP/1.1 response: each NDJSON line as its own chunk
+            // so reqwest's bytes_stream sees multiple deltas, not one.
+            let mut header = String::new();
+            header.push_str("HTTP/1.1 200 OK\r\n");
+            header.push_str("Content-Type: application/x-ndjson\r\n");
+            header.push_str("Transfer-Encoding: chunked\r\n");
+            header.push_str("\r\n");
+            sock.write_all(header.as_bytes()).await.unwrap();
+
+            for line in body.split(|&b| b == b'\n') {
+                if line.is_empty() {
+                    continue;
+                }
+                let mut chunk = Vec::new();
+                chunk.extend_from_slice(line);
+                chunk.push(b'\n');
+                let chunk_header = format!("{:x}\r\n", chunk.len());
+                sock.write_all(chunk_header.as_bytes()).await.unwrap();
+                sock.write_all(&chunk).await.unwrap();
+                sock.write_all(b"\r\n").await.unwrap();
+                // Slight delay so chunks land separately.
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+            sock.write_all(b"0\r\n\r\n").await.unwrap();
+            let _ = sock.shutdown().await;
+        });
+        format!("http://127.0.0.1:{port}")
+    }
+
+    #[tokio::test]
+    async fn stream_emits_deltas_and_done() {
+        let ndjson = b"{\"message\":{\"role\":\"assistant\",\"content\":\"Hello\"},\"done\":false}\n\
+                       {\"message\":{\"role\":\"assistant\",\"content\":\", \"},\"done\":false}\n\
+                       {\"message\":{\"role\":\"assistant\",\"content\":\"world!\"},\"done\":false}\n\
+                       {\"message\":{\"role\":\"assistant\",\"content\":\"\"},\"done\":true,\"done_reason\":\"stop\",\"prompt_eval_count\":3,\"eval_count\":5}\n";
+        let url = spawn_ndjson_server(ndjson).await;
+        let provider = OllamaProvider::with_base_url(url);
+        let mut rx = provider.stream(sample_request()).await.unwrap();
+        let mut deltas = Vec::new();
+        let mut done_resp: Option<LlmResponse> = None;
+        while let Some(ev) = rx.recv().await {
+            match ev {
+                LlmStreamEvent::Delta(t) => deltas.push(t),
+                LlmStreamEvent::Done(r) => {
+                    done_resp = Some(r);
+                    break;
+                }
+                LlmStreamEvent::Error(e) => panic!("stream error: {e}"),
+                LlmStreamEvent::ToolUse { .. } => {}
+            }
+        }
+        assert_eq!(deltas, vec!["Hello", ", ", "world!"]);
+        let resp = done_resp.expect("missing Done event");
+        match &resp.content.parts[0] {
+            Part::Text(t) => assert_eq!(t, "Hello, world!"),
+            _ => panic!("expected text"),
+        }
+        assert_eq!(resp.usage.input_tokens, 3);
+        assert_eq!(resp.usage.output_tokens, 5);
+        assert_eq!(resp.finish_reason, FinishReason::Stop);
     }
 }

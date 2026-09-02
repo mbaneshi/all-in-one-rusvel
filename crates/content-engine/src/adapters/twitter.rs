@@ -118,11 +118,14 @@ impl TwitterAdapter {
         for line in text.lines() {
             let trimmed = line.trim();
             // Check if line starts with "N/" pattern
-            if let Some(rest) = trimmed.strip_prefix(|c: char| c.is_ascii_digit()).and_then(|s| {
-                // Handle multi-digit: consume more digits then "/"
-                let s = s.trim_start_matches(|c: char| c.is_ascii_digit());
-                s.strip_prefix('/')
-            }) {
+            if let Some(rest) = trimmed
+                .strip_prefix(|c: char| c.is_ascii_digit())
+                .and_then(|s| {
+                    // Handle multi-digit: consume more digits then "/"
+                    let s = s.trim_start_matches(|c: char| c.is_ascii_digit());
+                    s.strip_prefix('/')
+                })
+            {
                 if !current.is_empty() {
                     tweets.push(current.trim().to_string());
                 }
@@ -150,7 +153,10 @@ impl TwitterAdapter {
         }
 
         // Enforce 280 char limit per tweet
-        tweets.iter().map(|t| t.chars().take(280).collect()).collect()
+        tweets
+            .iter()
+            .map(|t| t.chars().take(280).collect())
+            .collect()
     }
 }
 

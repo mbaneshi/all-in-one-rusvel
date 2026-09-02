@@ -37,10 +37,10 @@ pub struct ChatConfig {
 impl Default for ChatConfig {
     fn default() -> Self {
         Self {
-            // Default to Cursor terminal agent (`rusvel-llm` CursorAgentProvider) to avoid
-            // Claude Max / API limits when Cursor subscription is available. Pick
-            // `claude/sonnet` etc. in the UI for Claude CLI routing.
-            model: "cursor/sonnet-4".into(),
+            // Default to Claude (`claude -p` / Messages API routing) — it works out of the
+            // box on machines without the Cursor CLI. Pick `cursor/sonnet-4` etc. in the
+            // UI to route through the Cursor terminal agent instead.
+            model: "claude/claude-sonnet-5".into(),
             effort: "medium".into(),
             max_budget_usd: None,
             permission_mode: "default".into(),
@@ -94,18 +94,49 @@ impl ChatConfig {
 const CONFIG_KEY: &str = "chat_config";
 const CONFIG_ID: &str = "current";
 
-/// Legacy picker values (before `cursor/…` and `claude/…` prefixes) routed to Claude CLI
-/// and hit Max/API limits. Rewrite once to Cursor agent.
-pub(crate) fn migrate_legacy_chat_model(config: &mut ChatConfig) -> bool {
-    if matches!(config.model.as_str(), "sonnet" | "opus" | "haiku") {
-        config.model = "cursor/sonnet-4".into();
+/// Rewrite persisted model ids that can no longer work on this machine:
+/// legacy bare picker values (before `cursor/…` and `claude/…` prefixes), and
+/// `cursor/…` models when the Cursor CLI is absent (`cursor_available == false`) —
+/// spawning it would 500 every chat. A present Cursor binary leaves `cursor/…` alone.
+pub(crate) fn migrate_legacy_chat_model(config: &mut ChatConfig, cursor_available: bool) -> bool {
+    let legacy_bare = matches!(config.model.as_str(), "sonnet" | "opus" | "haiku");
+    let unusable_cursor = !cursor_available && config.model.starts_with("cursor/");
+    if legacy_bare || unusable_cursor {
+        config.model = "claude/claude-sonnet-5".into();
         true
     } else {
         false
     }
 }
 
-/// Load persisted chat config and migrate legacy model ids to `cursor/sonnet-4` when needed.
+/// True when the Cursor CLI (`RUSVEL_CURSOR_BIN`, default `cursor` — see
+/// `rusvel_llm::cursor_agent`) resolves to an executable, either as an explicit
+/// path or via `PATH` lookup.
+fn cursor_binary_available() -> bool {
+    let bin = std::env::var("RUSVEL_CURSOR_BIN").unwrap_or_else(|_| "cursor".into());
+    let is_executable = |path: &std::path::Path| {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            path.metadata()
+                .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+                .unwrap_or(false)
+        }
+        #[cfg(not(unix))]
+        {
+            path.is_file()
+        }
+    };
+
+    if bin.contains(std::path::MAIN_SEPARATOR) {
+        return is_executable(std::path::Path::new(&bin));
+    }
+    std::env::var_os("PATH")
+        .map(|paths| std::env::split_paths(&paths).any(|dir| is_executable(&dir.join(&bin))))
+        .unwrap_or(false)
+}
+
+/// Load persisted chat config and migrate stale model ids to `claude/claude-sonnet-5` when needed.
 pub async fn load_and_migrate_chat_config(
     storage: &Arc<dyn StoragePort>,
 ) -> Result<ChatConfig, (StatusCode, String)> {
@@ -119,11 +150,11 @@ pub async fn load_and_migrate_chat_config(
         .and_then(|v| serde_json::from_value(v).ok())
         .unwrap_or_default();
 
-    if migrate_legacy_chat_model(&mut config) {
+    if migrate_legacy_chat_model(&mut config, cursor_binary_available()) {
         info!(
             target: "rusvel::config",
             model = %config.model,
-            "migrated legacy bare Claude chat model to Cursor agent default"
+            "migrated stale chat model to Claude default"
         );
         let value = serde_json::to_value(&config)
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -332,7 +363,9 @@ async fn probe_cli(cmd: &str, args: &[&str]) -> Option<bool> {
 pub async fn build_llm_providers_report_for_state(state: &AppState) -> LlmProvidersReport {
     let forced_pref = state.operator_prefs.force_claude_cli == Some(true);
     build_llm_providers_report(
-        state.claude_transport_cli.load(std::sync::atomic::Ordering::Relaxed),
+        state
+            .claude_transport_cli
+            .load(std::sync::atomic::Ordering::Relaxed),
         claude_cli_forced_by_env(),
         forced_pref,
     )
@@ -390,37 +423,31 @@ pub async fn build_llm_providers_report(
         claude_cli_ok = probe_cli("claude", &["-h"]).await;
     }
     let claude_cli_detail = match claude_cli_ok {
-        Some(true) => Some(
-            if effective_claude_cli {
-                if claude_forced_operator_pref {
-                    "This process routes `claude/…` through `claude -p` because operator_prefs.force_claude_cli=true was saved and applied at boot."
+        Some(true) => Some(if effective_claude_cli {
+            if claude_forced_operator_pref {
+                "This process routes `claude/…` through `claude -p` because operator_prefs.force_claude_cli=true was saved and applied at boot."
                         .into()
-                } else if claude_forced_env {
-                    "This process routes `claude/…` through `claude -p` because RUSVEL_USE_CLAUDE_CLI is set (even if ANTHROPIC_API_KEY exists)."
+            } else if claude_forced_env {
+                "This process routes `claude/…` through `claude -p` because RUSVEL_USE_CLAUDE_CLI is set (even if ANTHROPIC_API_KEY exists)."
                         .into()
-                } else {
-                    "This process routes `claude/…` through `claude -p` (no Anthropic API path at boot). Subscription / Claude Code Max."
-                        .into()
-                }
             } else {
-                "`claude` works on PATH, but this server uses the Anthropic Messages API for `claude/…` (API key present and CLI not forced). Low-credit errors come from the API — set operator pref, RUSVEL_USE_CLAUDE_CLI=1, or unset the key, then restart."
+                "This process routes `claude/…` through `claude -p` (no Anthropic API path at boot). Subscription / Claude Code Max."
+                        .into()
+            }
+        } else {
+            "`claude` works on PATH, but this server uses the Anthropic Messages API for `claude/…` (API key present and CLI not forced). Low-credit errors come from the API — set operator pref, RUSVEL_USE_CLAUDE_CLI=1, or unset the key, then restart."
                     .into()
-            },
-        ),
-        Some(false) => Some(
-            if effective_claude_cli {
-                "`claude` failed — fix install/PATH; this server expects CLI for `claude/…`.".into()
-            } else {
-                "`claude` exited non-zero — only needed if you switch to CLI routing.".into()
-            },
-        ),
-        None => Some(
-            if effective_claude_cli {
-                "Could not run `claude` within 4s — required for `claude/…` on this server.".into()
-            } else {
-                "Could not probe `claude` within 4s (optional while using API).".into()
-            },
-        ),
+        }),
+        Some(false) => Some(if effective_claude_cli {
+            "`claude` failed — fix install/PATH; this server expects CLI for `claude/…`.".into()
+        } else {
+            "`claude` exited non-zero — only needed if you switch to CLI routing.".into()
+        }),
+        None => Some(if effective_claude_cli {
+            "Could not run `claude` within 4s — required for `claude/…` on this server.".into()
+        } else {
+            "Could not probe `claude` within 4s (optional while using API).".into()
+        }),
     };
 
     let openai_key = std::env::var("OPENAI_API_KEY")
@@ -430,8 +457,12 @@ pub async fn build_llm_providers_report(
     let cursor_bin = std::env::var("RUSVEL_CURSOR_BIN").unwrap_or_else(|_| "cursor".into());
     let cursor_ok = probe_cli(&cursor_bin, &["--version"]).await;
     let cursor_detail = match cursor_ok {
-        Some(true) => Some(format!("`{cursor_bin} --version` OK — Cursor agent models use prefix cursor/…")),
-        Some(false) => Some(format!("`{cursor_bin} --version` failed — install Cursor CLI or set RUSVEL_CURSOR_BIN.")),
+        Some(true) => Some(format!(
+            "`{cursor_bin} --version` OK — Cursor agent models use prefix cursor/…"
+        )),
+        Some(false) => Some(format!(
+            "`{cursor_bin} --version` failed — install Cursor CLI or set RUSVEL_CURSOR_BIN."
+        )),
         None => Some(format!("Could not run `{cursor_bin}` within 4s.")),
     };
 
@@ -487,7 +518,7 @@ pub async fn build_llm_providers_report(
             } else {
                 "not configured".into()
             },
-            healthy: if openai_key { None } else { None },
+            healthy: None,
             detail: if openai_key {
                 Some("Use openai/gpt-4o etc. in App defaults.".into())
             } else {
@@ -520,22 +551,52 @@ mod tests {
     use super::*;
 
     #[test]
-    fn migrate_legacy_opus_to_cursor() {
+    fn default_model_is_claude_sonnet_5() {
+        assert_eq!(ChatConfig::default().model, "claude/claude-sonnet-5");
+    }
+
+    #[test]
+    fn migrate_legacy_bare_ids_to_claude() {
+        for legacy in ["sonnet", "opus", "haiku"] {
+            let mut c = ChatConfig {
+                model: legacy.into(),
+                ..Default::default()
+            };
+            assert!(migrate_legacy_chat_model(&mut c, true));
+            assert_eq!(c.model, "claude/claude-sonnet-5");
+        }
+    }
+
+    #[test]
+    fn migrate_cursor_model_when_binary_absent() {
         let mut c = ChatConfig {
-            model: "opus".into(),
+            model: "cursor/sonnet-4".into(),
             ..Default::default()
         };
-        assert!(migrate_legacy_chat_model(&mut c));
+        assert!(migrate_legacy_chat_model(&mut c, false));
+        assert_eq!(c.model, "claude/claude-sonnet-5");
+    }
+
+    #[test]
+    fn keeps_cursor_model_when_binary_present() {
+        let mut c = ChatConfig {
+            model: "cursor/sonnet-4".into(),
+            ..Default::default()
+        };
+        assert!(!migrate_legacy_chat_model(&mut c, true));
         assert_eq!(c.model, "cursor/sonnet-4");
     }
 
     #[test]
     fn does_not_migrate_claude_prefixed() {
-        let mut c = ChatConfig {
-            model: "claude/opus".into(),
-            ..Default::default()
-        };
-        assert!(!migrate_legacy_chat_model(&mut c));
+        for cursor_available in [true, false] {
+            let mut c = ChatConfig {
+                model: "claude/opus".into(),
+                ..Default::default()
+            };
+            assert!(!migrate_legacy_chat_model(&mut c, cursor_available));
+            assert_eq!(c.model, "claude/opus");
+        }
     }
 
     #[test]

@@ -1,0 +1,34 @@
+name: Evals
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+# Merge gate: every PR must pass the fixture-based eval suite.
+# See `crates/rusvel-evals/` and GitHub issue #8.
+jobs:
+  evals:
+    name: rusvel-evals (fixture suite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install protoc (needed by lancedb transitively)
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Build evals crate
+        run: cargo build -p rusvel-evals
+
+      - name: Run evals via cargo test
+        run: cargo test -p rusvel-evals -- --nocapture
+
+      - name: Run evals via CLI (matches local workflow)
+        run: cargo run -p rusvel-evals

@@ -19,7 +19,7 @@ use harvest_engine::HarvestEngine;
 use rusvel_agent::AgentRuntime;
 use rusvel_api::operator_runtime::OperatorRuntimePrefs;
 use rusvel_api::{AppState, build_router};
-use rusvel_llm::claude_transport_is_cli;
+use rusvel_auth::InMemoryAuthAdapter;
 use rusvel_config::TomlConfig;
 use rusvel_core::domain::{
     AgentOutput, AgentStatus, Content, FinishReason, LlmRequest, LlmResponse, LlmUsage, ModelRef,
@@ -31,10 +31,10 @@ use rusvel_core::ports::{
     AgentPort, AuthPort, ConfigPort, EventPort, JobPort, LlmPort, MemoryPort, SessionPort,
     StoragePort, ToolPort,
 };
-use rusvel_auth::InMemoryAuthAdapter;
 use rusvel_core::registry::DepartmentRegistry;
 use rusvel_db::Database;
 use rusvel_event::EventBus;
+use rusvel_llm::claude_transport_is_cli;
 use rusvel_memory::MemoryStore;
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -328,7 +328,9 @@ async fn build_harness_with_auth_and_gtm(
         data_dir: std::env::temp_dir().join("rusvel-api-test"),
         http_listen: "127.0.0.1:3000".into(),
         llm_multi: Arc::new(rusvel_llm::MultiProvider::new()),
-        claude_transport_cli: Arc::new(std::sync::atomic::AtomicBool::new(claude_transport_is_cli())),
+        claude_transport_cli: Arc::new(std::sync::atomic::AtomicBool::new(
+            claude_transport_is_cli(),
+        )),
         operator_prefs: OperatorRuntimePrefs::default(),
         shutdown_tx: None,
         reexec_pending: Arc::new(std::sync::atomic::AtomicBool::new(false)),

@@ -410,7 +410,7 @@ impl FlowEngine {
             .into_iter()
             .filter_map(|v| serde_json::from_value::<FlowExecution>(v).ok())
             .collect();
-        executions.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+        executions.sort_by_key(|a| std::cmp::Reverse(a.started_at));
         executions.truncate(cap);
         Ok(executions)
     }

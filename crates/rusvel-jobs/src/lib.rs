@@ -1,8 +1,19 @@
-//! In-memory job queue implementing [`JobPort`] from `rusvel-core`.
+//! Job queue implementations of [`JobPort`] from `rusvel-core`.
 //!
-//! The production binary uses [`rusvel_db::Database`] as [`JobPort`]
-//! (SQLite, shared with [`rusvel_core::ports::JobStore`]). This crate
-//! remains useful for fast unit tests and the [`spawn_worker`] helper.
+//! Two queues live here:
+//!
+//! - [`PersistentJobQueue`] — SQLite-backed (WAL, shared `jobs` table
+//!   via [`rusvel_db::Database`]); survives restarts, recovers jobs
+//!   interrupted mid-run, and prunes old finished rows. Use this in
+//!   anything long-lived.
+//! - [`JobQueue`] — in-memory `Vec<Job>` behind a `Mutex`; volatile,
+//!   kept for fast unit tests.
+//!
+//! Plus the [`spawn_worker`] polling helper, which works with either.
+
+mod persistent;
+
+pub use persistent::{DEFAULT_RETENTION, PersistentJobQueue, RecoveryReport};
 
 use std::future::Future;
 use std::sync::Arc;

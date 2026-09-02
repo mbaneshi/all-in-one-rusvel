@@ -8,7 +8,7 @@ use axum::extract::State;
 use axum::http::Extensions;
 use axum::http::{HeaderMap, StatusCode};
 use rusvel_core::domain::{
-    AutomationTriggerPayload, JobKind, NewJob, AUTOMATION_WEBHOOK_EVENT_KIND,
+    AUTOMATION_WEBHOOK_EVENT_KIND, AutomationTriggerPayload, JobKind, NewJob,
 };
 use rusvel_core::error::RusvelError;
 use rusvel_core::id::SessionId;

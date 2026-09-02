@@ -12,6 +12,7 @@ use forge_engine::ForgeEngine;
 use harvest_engine::HarvestEngine;
 use rusvel_agent::AgentRuntime;
 use rusvel_api::{AppState, build_router};
+use rusvel_auth::InMemoryAuthAdapter;
 use rusvel_config::TomlConfig;
 use rusvel_core::domain::{
     AgentOutput, AgentStatus, Content, FinishReason, JobKind, JobResult, LlmRequest, LlmResponse,
@@ -23,7 +24,6 @@ use rusvel_core::ports::{
     AgentPort, AuthPort, ConfigPort, EventPort, JobPort, LlmPort, MemoryPort, SessionPort,
     StoragePort, ToolPort,
 };
-use rusvel_auth::InMemoryAuthAdapter;
 use rusvel_core::registry::DepartmentRegistry;
 use rusvel_db::Database;
 use rusvel_event::EventBus;
@@ -334,7 +334,9 @@ async fn test_router() -> (
         data_dir: std::env::temp_dir().join("rusvel-harvest-test"),
         http_listen: "127.0.0.1:3000".into(),
         llm_multi: std::sync::Arc::new(rusvel_llm::MultiProvider::new()),
-        claude_transport_cli: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(rusvel_llm::claude_transport_is_cli())),
+        claude_transport_cli: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(
+            rusvel_llm::claude_transport_is_cli(),
+        )),
         operator_prefs: rusvel_api::operator_runtime::OperatorRuntimePrefs::default(),
         shutdown_tx: None,
         reexec_pending: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),

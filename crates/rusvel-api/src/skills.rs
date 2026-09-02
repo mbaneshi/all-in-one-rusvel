@@ -186,11 +186,7 @@ pub async fn resolve_skill_by_name_for_playbook(
     skill_name: &str,
     input: &str,
 ) -> Result<String, String> {
-    let normalized_slug = skill_name
-        .trim()
-        .to_lowercase()
-        .replace('_', "-")
-        .replace(' ', "-");
+    let normalized_slug = skill_name.trim().to_lowercase().replace(['_', ' '], "-");
 
     let all = state
         .storage

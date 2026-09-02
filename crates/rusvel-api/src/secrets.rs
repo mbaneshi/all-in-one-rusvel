@@ -144,7 +144,10 @@ pub async fn get_secret_plain(state: &AppState, key: &str) -> Option<String> {
 }
 
 /// Replace `{{secret:name}}` substrings in all JSON strings using [`AuthPort`].
-pub async fn resolve_secret_placeholders(state: &AppState, mut v: serde_json::Value) -> serde_json::Value {
+pub async fn resolve_secret_placeholders(
+    state: &AppState,
+    mut v: serde_json::Value,
+) -> serde_json::Value {
     resolve_walk(state, &mut v).await;
     v
 }
@@ -176,10 +179,7 @@ fn resolve_walk<'a>(
 async fn resolve_string(state: &AppState, s: &str) -> String {
     let mut out = s.to_string();
     let needle = "{{secret:";
-    loop {
-        let Some(start) = out.find(needle) else {
-            break;
-        };
+    while let Some(start) = out.find(needle) {
         let after = &out[start + needle.len()..];
         let Some(end) = after.find("}}") else {
             break;

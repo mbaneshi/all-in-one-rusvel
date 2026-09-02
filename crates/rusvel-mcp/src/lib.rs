@@ -352,14 +352,10 @@ impl RusvelMcp {
                     variables: vars,
                     department_id,
                 };
-                let out = rusvel_api::automation::dispatch_automation_trigger(
-                    app,
-                    sid,
-                    trigger,
-                    None,
-                )
-                    .await
-                    .map_err(|e| McpError::Engine(RusvelError::Validation(e)))?;
+                let out =
+                    rusvel_api::automation::dispatch_automation_trigger(app, sid, trigger, None)
+                        .await
+                        .map_err(|e| McpError::Engine(RusvelError::Validation(e)))?;
                 serde_json::to_value(out).map_err(McpError::Json)?
             }
             "automation_run_playbook" => {
@@ -384,14 +380,10 @@ impl RusvelMcp {
                     variables: vars,
                     department_id: None,
                 };
-                let out = rusvel_api::automation::dispatch_automation_trigger(
-                    app,
-                    sid,
-                    trigger,
-                    None,
-                )
-                    .await
-                    .map_err(|e| McpError::Engine(RusvelError::Validation(e)))?;
+                let out =
+                    rusvel_api::automation::dispatch_automation_trigger(app, sid, trigger, None)
+                        .await
+                        .map_err(|e| McpError::Engine(RusvelError::Validation(e)))?;
                 serde_json::to_value(out).map_err(McpError::Json)?
             }
             "automation_upsert_cron_schedule" => {

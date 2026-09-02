@@ -63,6 +63,7 @@ pub struct StdioTransport {
 
 impl StdioTransport {
     /// Spawn a child process and start the response reader task.
+    #[allow(clippy::unused_async_trait_impl)]
     pub async fn spawn(
         command: &str,
         args: &[String],

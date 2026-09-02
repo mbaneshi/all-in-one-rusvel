@@ -337,16 +337,13 @@ fn normalize_project(project: &serde_json::Value) -> Option<serde_json::Value> {
 
 /// Normalize client/user data from Freelancer API responses.
 fn normalize_client(user: &serde_json::Value) -> Option<serde_json::Value> {
-    let id = user
-        .get("id")
-        .or_else(|| user.get("user_id"))
-        .map(|v| {
-            if let Some(n) = v.as_u64() {
-                n.to_string()
-            } else {
-                v.as_str().unwrap_or("").to_string()
-            }
-        })?;
+    let id = user.get("id").or_else(|| user.get("user_id")).map(|v| {
+        if let Some(n) = v.as_u64() {
+            n.to_string()
+        } else {
+            v.as_str().unwrap_or("").to_string()
+        }
+    })?;
 
     let name = user
         .get("display_name")
@@ -369,13 +366,17 @@ fn normalize_client(user: &serde_json::Value) -> Option<serde_json::Value> {
 //  Helpers
 // ════════════════════════════════════════════════════════════════════
 
-fn extract_budget(
-    project: &serde_json::Value,
-) -> (Option<f64>, Option<f64>, Option<&'static str>) {
+fn extract_budget(project: &serde_json::Value) -> (Option<f64>, Option<f64>, Option<&'static str>) {
     // Object form: { budget: { min: N, max: N } }
     if let Some(b) = project.get("budget").filter(|v| v.is_object()) {
-        let min = b.get("min").or_else(|| b.get("minimum")).and_then(|v| v.as_f64());
-        let max = b.get("max").or_else(|| b.get("maximum")).and_then(|v| v.as_f64());
+        let min = b
+            .get("min")
+            .or_else(|| b.get("minimum"))
+            .and_then(|v| v.as_f64());
+        let max = b
+            .get("max")
+            .or_else(|| b.get("maximum"))
+            .and_then(|v| v.as_f64());
         let bt = if project.get("type").and_then(|v| v.as_str()) == Some("hourly") {
             "hourly"
         } else {
@@ -511,7 +512,7 @@ mod tests {
                         "budget": { "min": 500.0, "max": 1000.0 },
                         "jobs": [{ "name": "Python" }, { "name": "AI" }],
                         "bid_count": 15,
-                        "time_submitted": 1711756800,
+                        "time_submitted": 1_711_756_800,
                         "owner": {
                             "country": "US",
                             "totalSpent": 50000.0
@@ -604,11 +605,7 @@ mod tests {
 
         // find_project_arrays won't match this structure directly,
         // but events_from_response will try the recursive search
-        let events = events_from_response(
-            "https://www.freelancer.com/some-page",
-            &body,
-            "tab3",
-        );
+        let events = events_from_response("https://www.freelancer.com/some-page", &body, "tab3");
         // The ngrx structure is nested differently — single rawDocument, not an array
         // This tests that even non-array structures don't crash
         assert!(events.is_empty() || events.len() == 1);
@@ -692,9 +689,11 @@ mod tests {
         );
         // Should have 1 job + 1 client
         assert_eq!(events.len(), 2);
-        let client_event = events.iter().find(|e| matches!(e,
-            BrowserEvent::DataCaptured { kind, .. } if kind == "client_profile"
-        ));
+        let client_event = events.iter().find(|e| {
+            matches!(e,
+                BrowserEvent::DataCaptured { kind, .. } if kind == "client_profile"
+            )
+        });
         assert!(client_event.is_some());
     }
 }

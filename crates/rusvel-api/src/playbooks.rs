@@ -12,10 +12,10 @@ use serde_json::json;
 
 use crate::AppState;
 use crate::skills;
+use rusvel_core::domain::ObjectFilter;
 use rusvel_core::domain::{
     AgentProfile, Content, Part, Playbook, PlaybookAction, PlaybookRun, PlaybookRunStatus,
 };
-use rusvel_core::domain::ObjectFilter;
 use rusvel_core::id::FlowId;
 
 type ApiResult<T> = Result<Json<T>, (StatusCode, String)>;
@@ -452,10 +452,11 @@ async fn run_step(
                         .any(|n| r.name.eq_ignore_ascii_case(n.as_str()))
                 });
             }
-            let text: String = rules
-                .iter()
-                .map(|r| format!("[{}]: {}\n", r.name, r.content))
-                .collect();
+            let text: String = rules.iter().fold(String::new(), |mut acc, r| {
+                use std::fmt::Write as _;
+                let _ = writeln!(acc, "[{}]: {}", r.name, r.content);
+                acc
+            });
             ctx["rules_excerpt"] = json!(text);
             Ok(json!({
                 "step": step.name,
@@ -653,7 +654,7 @@ pub async fn list_runs() -> ApiResult<Vec<PlaybookRun>> {
         .read()
         .map_err(|_| err(StatusCode::INTERNAL_SERVER_ERROR, "lock poisoned"))?;
     let mut runs: Vec<PlaybookRun> = g.values().cloned().collect();
-    runs.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+    runs.sort_by_key(|a| std::cmp::Reverse(a.started_at));
     runs.truncate(100);
     Ok(Json(runs))
 }

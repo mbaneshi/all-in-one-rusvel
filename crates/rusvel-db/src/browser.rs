@@ -5,13 +5,13 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use rusqlite::{Connection, Statement, types::ValueRef};
-use serde_json::{Number, Value};
 use rusvel_core::error::{Result, RusvelError};
 use rusvel_core::ports::{
     RusvelBaseColumnMeta, RusvelBasePagedRows, RusvelBasePort, RusvelBaseSqlExecute,
     RusvelBaseTableSummary,
 };
 use rusvel_schema::SchemaIntrospector;
+use serde_json::{Number, Value};
 
 use crate::Database;
 

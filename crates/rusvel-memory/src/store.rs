@@ -161,7 +161,9 @@ impl MemoryStore {
             serde_json::from_str(&metadata_str).unwrap_or_else(|_| serde_json::json!({}));
 
         let embedding = embedding_blob.map(|blob| {
-            blob.chunks_exact(4)
+            blob.as_chunks::<4>()
+                .0
+                .iter()
                 .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
                 .collect()
         });

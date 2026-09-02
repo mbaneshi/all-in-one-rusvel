@@ -194,7 +194,9 @@ pub struct CostEventsSpendSnapshot {
 }
 
 /// Thread-safe via an internal `Mutex<Connection>`. For the single-writer
-/// nature of `SQLite` this is the simplest correct approach.
+/// nature of `SQLite` this is the simplest correct approach. `Clone` is
+/// cheap — clones share the same underlying connection.
+#[derive(Clone)]
 pub struct Database {
     conn: Arc<Mutex<Connection>>,
 }
@@ -451,8 +453,9 @@ impl Database {
         let order_clause = match order {
             Some(o) => {
                 let (col, desc) = rusvel_schema::parse_order_column_spec(o)?;
-                if !rusvel_schema::SchemaIntrospector::validate_column_for_table(&conn, table, &col)?
-                {
+                if !rusvel_schema::SchemaIntrospector::validate_column_for_table(
+                    &conn, table, &col,
+                )? {
                     return Err(RusvelError::Validation(format!("unknown column: {col}")));
                 }
                 let dir = if desc { "DESC" } else { "ASC" };
@@ -2389,10 +2392,7 @@ mod tests {
         let got = JobStore::get(&db, &job.id).await.unwrap().unwrap();
         assert_eq!(got.status, JobStatus::Failed);
         assert!(
-            got.error
-                .as_deref()
-                .unwrap()
-                .contains("stale Running job"),
+            got.error.as_deref().unwrap().contains("stale Running job"),
             "unexpected error: {:?}",
             got.error
         );

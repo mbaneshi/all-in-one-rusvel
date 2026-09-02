@@ -97,18 +97,16 @@ fn dept_pane_cache() -> &'static Mutex<HashMap<(SessionId, String), DeptPaneEntr
 }
 
 fn terminal_allowed_dept_ids() -> Option<HashSet<String>> {
-    env::var("RUSVEL_TERMINAL_ALLOWED_DEPTS").ok().and_then(|s| {
-        let set: HashSet<String> = s
-            .split(',')
-            .map(|x| x.trim().to_string())
-            .filter(|x| !x.is_empty())
-            .collect();
-        if set.is_empty() {
-            None
-        } else {
-            Some(set)
-        }
-    })
+    env::var("RUSVEL_TERMINAL_ALLOWED_DEPTS")
+        .ok()
+        .and_then(|s| {
+            let set: HashSet<String> = s
+                .split(',')
+                .map(|x| x.trim().to_string())
+                .filter(|x| !x.is_empty())
+                .collect();
+            if set.is_empty() { None } else { Some(set) }
+        })
 }
 
 fn dept_allowed_for_terminal(dept_id: &str) -> bool {
@@ -261,7 +259,7 @@ pub async fn terminal_dept_pane(
             .into_response();
     }
 
-    let prefs = dept_terminal_prefs(&*state, &dept_id);
+    let prefs = dept_terminal_prefs(&state, &dept_id);
     let init_cmds = prefs
         .as_ref()
         .map(|p| p.init_commands.clone())
@@ -327,13 +325,7 @@ pub async fn terminal_dept_pane(
     }
 
     let mut guard = dept_pane_cache().lock().unwrap();
-    guard.insert(
-        key,
-        DeptPaneEntry {
-            window_id,
-            pane_id,
-        },
-    );
+    guard.insert(key, DeptPaneEntry { window_id, pane_id });
 
     Json(serde_json::json!({
         "pane_id": pane_id.to_string(),
@@ -739,7 +731,10 @@ pub async fn terminal_dept_trace(
     }
 
     let line = format!("\r\n\x1b[90m[rusvel:ui]\x1b[0m {msg}\r\n");
-    match terminal.inject_pane_output(&ent.pane_id, line.as_bytes()).await {
+    match terminal
+        .inject_pane_output(&ent.pane_id, line.as_bytes())
+        .await
+    {
         Ok(()) => axum::http::StatusCode::NO_CONTENT.into_response(),
         Err(e) => {
             tracing::debug!("terminal_dept_trace inject: {e}");
@@ -755,7 +750,7 @@ pub async fn terminal_dept_trace(
 fn ws_global_read_only() -> bool {
     matches!(
         env::var("RUSVEL_TERMINAL_READ_ONLY").ok().as_deref(),
-        Some("1") | Some("true")
+        Some("1" | "true")
     )
 }
 
@@ -831,10 +826,7 @@ async fn handle_ws(
         }
     };
 
-    let scrollback = terminal
-        .pane_scrollback(&pane_id)
-        .await
-        .unwrap_or_default();
+    let scrollback = terminal.pane_scrollback(&pane_id).await.unwrap_or_default();
 
     let mut rx: broadcast::Receiver<Vec<u8>> = match terminal.subscribe_pane(&pane_id).await {
         Ok(r) => r,

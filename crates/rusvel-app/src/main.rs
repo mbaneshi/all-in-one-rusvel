@@ -287,7 +287,7 @@ async fn pane_scrollback_snippet_for_approval(
             .chars()
             .rev()
             .collect();
-        out.insert_str(0, "…");
+        out.insert(0, '…');
     }
     out
 }
@@ -304,9 +304,10 @@ async fn stamp_job_approval_terminal_links(
     let Ok(panes) = terminal.list_panes_for_session(session_id).await else {
         return;
     };
-    let Some(p) = panes.iter().find(|p| {
-        matches!(&p.source, PaneSource::Department(d) if d.as_str() == dept_id)
-    }) else {
+    let Some(p) = panes
+        .iter()
+        .find(|p| matches!(&p.source, PaneSource::Department(d) if d.as_str() == dept_id))
+    else {
         return;
     };
     let Ok(Some(mut job)) = storage.jobs().get(job_id).await else {
@@ -770,6 +771,75 @@ async fn seed_defaults(storage: &Arc<dyn StoragePort>) -> Result<()> {
 }
 
 // ════════════════════════════════════════════════════════════════════
+//  RUSVEL_DEMO=harvest — nightly goal-loop preset
+// ════════════════════════════════════════════════════════════════════
+
+const HARVEST_DEMO_SCHEDULE_NAME: &str = "harvest.demo.nightly_goal_loop";
+
+async fn seed_harvest_demo(
+    scheduler: &rusvel_cron::CronScheduler,
+    storage: &Arc<dyn StoragePort>,
+    demo_value: Option<&str>,
+) -> Result<()> {
+    if demo_value != Some("harvest") {
+        return Ok(());
+    }
+
+    let existing = scheduler.list().await?;
+    if existing
+        .iter()
+        .any(|s| s.name == HARVEST_DEMO_SCHEDULE_NAME)
+    {
+        tracing::info!(
+            "RUSVEL_DEMO=harvest: schedule '{HARVEST_DEMO_SCHEDULE_NAME}' already present; skipping seed"
+        );
+        return Ok(());
+    }
+
+    let session_id = match storage.sessions().list_sessions().await {
+        Ok(list) if !list.is_empty() => list[0].id,
+        _ => {
+            tracing::warn!(
+                "RUSVEL_DEMO=harvest: no sessions available; skipping seed (rerun after first session)"
+            );
+            return Ok(());
+        }
+    };
+
+    let cron_expr =
+        std::env::var("RUSVEL_HARVEST_CRON").unwrap_or_else(|_| "0 9 * * *".to_string());
+    let top_n: u64 = std::env::var("RUSVEL_HARVEST_TOP_N")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(3);
+
+    let payload = serde_json::json!({
+        "source": "mock",
+        "goal_loop_top_n": top_n,
+        "profile": "",
+    });
+
+    let record = scheduler
+        .create(
+            HARVEST_DEMO_SCHEDULE_NAME.to_string(),
+            session_id,
+            cron_expr.clone(),
+            payload,
+            harvest_engine::events::HARVEST_AUTO_SCAN_CRON_KIND.to_string(),
+            true,
+        )
+        .await?;
+
+    tracing::info!(
+        schedule_id = %record.id,
+        cron = %cron_expr,
+        top_n = top_n,
+        "RUSVEL_DEMO=harvest: seeded nightly goal-loop schedule"
+    );
+    Ok(())
+}
+
+// ════════════════════════════════════════════════════════════════════
 //  First-run wizard — interactive onboarding via cliclack
 // ════════════════════════════════════════════════════════════════════
 
@@ -983,6 +1053,12 @@ async fn main() -> Result<()> {
 
     // 4. Concrete adapters
     let db: Arc<Database> = Arc::new(Database::open(data_dir.join("rusvel.db"))?);
+    // Recover jobs left `Running` by a prior shutdown and prune finished jobs
+    // past the default retention (rusvel-jobs::PersistentJobQueue, ADR-003).
+    match rusvel_jobs::PersistentJobQueue::from_database((*db).clone()) {
+        Ok(_) => tracing::info!("Job queue recovery + retention sweep complete"),
+        Err(e) => tracing::warn!("Job queue recovery failed: {e}"),
+    }
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     let reexec_pending = Arc::new(AtomicBool::new(false));
     let storage_for_boot: Arc<dyn rusvel_core::ports::StoragePort> = db.clone();
@@ -1088,8 +1164,7 @@ async fn main() -> Result<()> {
         if let Ok(profile) = rusvel_core::UserProfile::load(data_dir.join("profile.toml")) {
             voice_parts.push(format!(
                 "Author: {}. Role: {}.",
-                profile.identity.name,
-                profile.identity.role
+                profile.identity.name, profile.identity.role
             ));
         }
         if let Ok(rules) = db
@@ -1130,7 +1205,7 @@ async fn main() -> Result<()> {
     let deploy: Arc<dyn DeployPort> = Arc::new(rusvel_deploy::FlyDeployPort::new(config_port));
     let terminal_for_flow: Option<Arc<dyn rusvel_core::ports::TerminalPort>> =
         match std::env::var("RUSVEL_TERMINAL_DISABLE").ok().as_deref() {
-            Some("1") | Some("true") => {
+            Some("1" | "true") => {
                 tracing::info!("RUSVEL_TERMINAL_DISABLE: PTY terminal platform disabled");
                 None
             }
@@ -1250,6 +1325,9 @@ async fn main() -> Result<()> {
     let browser_for_jobs: Arc<dyn rusvel_core::ports::BrowserPort> = browser_port.clone();
     let terminal_for_jobs = terminal_for_flow.clone();
     let storage_for_jobs: Arc<dyn StoragePort> = db.clone() as Arc<dyn StoragePort>;
+    let outbound_for_jobs: Option<Arc<dyn rusvel_channel::ChannelPort>> =
+        rusvel_channel::TelegramChannel::from_env()
+            .map(|c| c as Arc<dyn rusvel_channel::ChannelPort>);
 
     let db_for_job_sweep = db.clone();
     let mut worker_rx = shutdown_rx.clone();
@@ -1310,18 +1388,10 @@ async fn main() -> Result<()> {
                 Ok(Some(job)) => {
                     let job_id = job.id;
                     let job_kind = job.kind.clone();
-                    let http_request_id = job
-                        .metadata
-                        .get("http_request_id")
-                        .and_then(|v| v.as_str());
-                    let schedule_id = job
-                        .payload
-                        .get("schedule_id")
-                        .and_then(|v| v.as_str());
-                    let event_kind = job
-                        .payload
-                        .get("event_kind")
-                        .and_then(|v| v.as_str());
+                    let http_request_id =
+                        job.metadata.get("http_request_id").and_then(|v| v.as_str());
+                    let schedule_id = job.payload.get("schedule_id").and_then(|v| v.as_str());
+                    let event_kind = job.payload.get("event_kind").and_then(|v| v.as_str());
                     let job_start = Instant::now();
                     tracing::info!(
                         job_id = %job_id,
@@ -1470,6 +1540,36 @@ async fn main() -> Result<()> {
                                                     )
                                                     .await;
                                                 }
+                                                if let Some(ref ch) = outbound_for_jobs {
+                                                    let title = job
+                                                        .metadata
+                                                        .get("opportunity_title")
+                                                        .and_then(|v| v.as_str())
+                                                        .unwrap_or(opp);
+                                                    let score = job
+                                                        .metadata
+                                                        .get("opportunity_score")
+                                                        .and_then(|v| v.as_f64());
+                                                    let score_str = score
+                                                        .map(|s| format!(" (score {:.2})", s))
+                                                        .unwrap_or_default();
+                                                    let text = format!(
+                                                        "[harvest] Proposal ready for review: {title}{score_str}\nApprove: POST /api/approvals/{job_id}/approve"
+                                                    );
+                                                    if let Err(e) = ch
+                                                        .send_message(
+                                                            &sid,
+                                                            serde_json::json!({"text": text}),
+                                                        )
+                                                        .await
+                                                    {
+                                                        tracing::warn!(
+                                                            job_id = %job_id,
+                                                            error = %e,
+                                                            "Telegram notify failed for proposal approval"
+                                                        );
+                                                    }
+                                                }
                                                 Ok(None)
                                             }
                                             Err(e) => Err(e),
@@ -1550,18 +1650,70 @@ async fn main() -> Result<()> {
                                 )
                                 .await
                                 {
-                                    Ok(opportunities) => Ok(Some(JobResult {
-                                        output: serde_json::json!({
-                                            "ok": true,
-                                            "schedule_id": schedule_id,
-                                            "count": opportunities.len(),
-                                            "event_kind": event_kind,
-                                        }),
-                                        metadata: serde_json::json!({
-                                            "engine": "harvest",
-                                            "trigger": "cron",
-                                        }),
-                                    })),
+                                    Ok(mut opportunities) => {
+                                        let top_n = payload
+                                            .get("goal_loop_top_n")
+                                            .and_then(|v| v.as_u64())
+                                            .map(|n| n as usize);
+                                        let profile = payload
+                                            .get("profile")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                        let mut enqueued_proposals: Vec<String> = Vec::new();
+                                        if let Some(n) = top_n {
+                                            opportunities.sort_by(|a, b| {
+                                                b.score
+                                                    .partial_cmp(&a.score)
+                                                    .unwrap_or(std::cmp::Ordering::Equal)
+                                            });
+                                            for opp in opportunities.iter().take(n) {
+                                                let proposal_job = NewJob {
+                                                    session_id: sid,
+                                                    kind: JobKind::ProposalDraft,
+                                                    payload: serde_json::json!({
+                                                        "opportunity_id": opp.id.to_string(),
+                                                        "profile": profile,
+                                                    }),
+                                                    max_retries: 3,
+                                                    metadata: serde_json::json!({
+                                                        "trigger": "harvest.goal_loop",
+                                                        "schedule_id": schedule_id,
+                                                        "opportunity_score": opp.score,
+                                                        "opportunity_title": opp.title.clone(),
+                                                    }),
+                                                    scheduled_at: None,
+                                                };
+                                                match job_port.enqueue(proposal_job).await {
+                                                    Ok(jid) => {
+                                                        enqueued_proposals.push(jid.to_string());
+                                                    }
+                                                    Err(e) => {
+                                                        tracing::warn!(
+                                                            job_id = %job_id,
+                                                            opportunity_id = %opp.id,
+                                                            error = %e,
+                                                            "Failed to enqueue ProposalDraft for goal loop"
+                                                        );
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Ok(Some(JobResult {
+                                            output: serde_json::json!({
+                                                "ok": true,
+                                                "schedule_id": schedule_id,
+                                                "count": opportunities.len(),
+                                                "event_kind": event_kind,
+                                                "goal_loop_top_n": top_n,
+                                                "enqueued_proposals": enqueued_proposals,
+                                            }),
+                                            metadata: serde_json::json!({
+                                                "engine": "harvest",
+                                                "trigger": "cron",
+                                            }),
+                                        }))
+                                    }
                                     Err(e) => {
                                         tracing::error!(
                                             job_id = %job_id,
@@ -1827,11 +1979,8 @@ async fn main() -> Result<()> {
                             if let Some(ref term) = terminal_for_jobs {
                                 let sid = job.session_id;
                                 let kind_str = format!("{:?}", job_kind);
-                                let line = format!(
-                                    "job {} done ({})",
-                                    job_id,
-                                    kind_str.replace(' ', "")
-                                );
+                                let line =
+                                    format!("job {} done ({})", job_id, kind_str.replace(' ', ""));
                                 let msg = format!("\r\n\x1b[36m[rusvel:job]\x1b[0m {line}\r\n");
                                 let target = if let Some(pid) =
                                     ensure_session_job_log_pane(term, &sid).await
@@ -1977,6 +2126,10 @@ async fn main() -> Result<()> {
         storage_port.clone(),
         jobs.clone(),
     ));
+    let demo_env = std::env::var("RUSVEL_DEMO").ok();
+    if let Err(e) = seed_harvest_demo(&cron_scheduler, &storage_port, demo_env.as_deref()).await {
+        tracing::warn!("RUSVEL_DEMO=harvest seed failed: {e}");
+    }
     if cli.command.is_some() {
         // Subcommand present -> CLI handler (includes `shell` command)
         let engine_refs = rusvel_cli::departments::EngineRefs {
@@ -2385,4 +2538,297 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod harvest_demo_tests {
+    use super::*;
+    use async_trait::async_trait;
+    use rusvel_core::error::Result as CoreResult;
+    use rusvel_core::id::*;
+    use rusvel_core::ports::*;
+    use std::sync::Mutex as StdMutex;
+
+    struct MemObjects {
+        rows: StdMutex<Vec<(String, String, serde_json::Value)>>,
+    }
+    impl MemObjects {
+        fn new() -> Self {
+            Self {
+                rows: StdMutex::new(Vec::new()),
+            }
+        }
+    }
+    #[async_trait]
+    impl ObjectStore for MemObjects {
+        async fn put(&self, kind: &str, id: &str, object: serde_json::Value) -> CoreResult<()> {
+            let mut rows = self.rows.lock().unwrap();
+            rows.retain(|(k, i, _)| !(k == kind && i == id));
+            rows.push((kind.into(), id.into(), object));
+            Ok(())
+        }
+        async fn get(&self, kind: &str, id: &str) -> CoreResult<Option<serde_json::Value>> {
+            let rows = self.rows.lock().unwrap();
+            Ok(rows
+                .iter()
+                .find(|(k, i, _)| k == kind && i == id)
+                .map(|(_, _, v)| v.clone()))
+        }
+        async fn delete(&self, kind: &str, id: &str) -> CoreResult<()> {
+            let mut rows = self.rows.lock().unwrap();
+            rows.retain(|(k, i, _)| !(k == kind && i == id));
+            Ok(())
+        }
+        async fn list(&self, kind: &str, _: ObjectFilter) -> CoreResult<Vec<serde_json::Value>> {
+            let rows = self.rows.lock().unwrap();
+            Ok(rows
+                .iter()
+                .filter(|(k, _, _)| k == kind)
+                .map(|(_, _, v)| v.clone())
+                .collect())
+        }
+    }
+
+    struct OneSessionStore {
+        id: SessionId,
+    }
+    #[async_trait]
+    impl SessionStore for OneSessionStore {
+        async fn put_session(&self, _: &Session) -> CoreResult<()> {
+            Ok(())
+        }
+        async fn get_session(&self, _: &SessionId) -> CoreResult<Option<Session>> {
+            Ok(None)
+        }
+        async fn list_sessions(&self) -> CoreResult<Vec<SessionSummary>> {
+            Ok(vec![SessionSummary {
+                id: self.id,
+                name: "demo".into(),
+                kind: SessionKind::Project,
+                tags: vec![],
+                updated_at: chrono::Utc::now(),
+                metadata: serde_json::json!({}),
+            }])
+        }
+        async fn put_run(&self, _: &Run) -> CoreResult<()> {
+            Ok(())
+        }
+        async fn get_run(&self, _: &RunId) -> CoreResult<Option<Run>> {
+            Ok(None)
+        }
+        async fn list_runs(&self, _: &SessionId) -> CoreResult<Vec<Run>> {
+            Ok(vec![])
+        }
+        async fn put_thread(&self, _: &Thread) -> CoreResult<()> {
+            Ok(())
+        }
+        async fn get_thread(&self, _: &ThreadId) -> CoreResult<Option<Thread>> {
+            Ok(None)
+        }
+        async fn list_threads(&self, _: &RunId) -> CoreResult<Vec<Thread>> {
+            Ok(vec![])
+        }
+    }
+
+    struct EmptySessionStore;
+    #[async_trait]
+    impl SessionStore for EmptySessionStore {
+        async fn put_session(&self, _: &Session) -> CoreResult<()> {
+            Ok(())
+        }
+        async fn get_session(&self, _: &SessionId) -> CoreResult<Option<Session>> {
+            Ok(None)
+        }
+        async fn list_sessions(&self) -> CoreResult<Vec<SessionSummary>> {
+            Ok(vec![])
+        }
+        async fn put_run(&self, _: &Run) -> CoreResult<()> {
+            Ok(())
+        }
+        async fn get_run(&self, _: &RunId) -> CoreResult<Option<Run>> {
+            Ok(None)
+        }
+        async fn list_runs(&self, _: &SessionId) -> CoreResult<Vec<Run>> {
+            Ok(vec![])
+        }
+        async fn put_thread(&self, _: &Thread) -> CoreResult<()> {
+            Ok(())
+        }
+        async fn get_thread(&self, _: &ThreadId) -> CoreResult<Option<Thread>> {
+            Ok(None)
+        }
+        async fn list_threads(&self, _: &RunId) -> CoreResult<Vec<Thread>> {
+            Ok(vec![])
+        }
+    }
+
+    struct NoopEvents;
+    #[async_trait]
+    impl EventStore for NoopEvents {
+        async fn append(&self, _: &Event) -> CoreResult<()> {
+            Ok(())
+        }
+        async fn get(&self, _: &EventId) -> CoreResult<Option<Event>> {
+            Ok(None)
+        }
+        async fn query(&self, _: EventFilter) -> CoreResult<Vec<Event>> {
+            Ok(vec![])
+        }
+    }
+
+    struct NoopJobStore;
+    #[async_trait]
+    impl JobStore for NoopJobStore {
+        async fn enqueue(&self, _: &Job) -> CoreResult<()> {
+            Ok(())
+        }
+        async fn dequeue(&self, _: &[JobKind]) -> CoreResult<Option<Job>> {
+            Ok(None)
+        }
+        async fn update(&self, _: &Job) -> CoreResult<()> {
+            Ok(())
+        }
+        async fn get(&self, _: &JobId) -> CoreResult<Option<Job>> {
+            Ok(None)
+        }
+        async fn list(&self, _: JobFilter) -> CoreResult<Vec<Job>> {
+            Ok(vec![])
+        }
+    }
+
+    struct NoopMetrics;
+    #[async_trait]
+    impl MetricStore for NoopMetrics {
+        async fn record(&self, _: &MetricPoint) -> CoreResult<()> {
+            Ok(())
+        }
+        async fn query(&self, _: MetricFilter) -> CoreResult<Vec<MetricPoint>> {
+            Ok(vec![])
+        }
+    }
+
+    struct TestStorage {
+        objects: MemObjects,
+        events: NoopEvents,
+        sessions: Box<dyn SessionStore>,
+        jobs: NoopJobStore,
+        metrics: NoopMetrics,
+    }
+    impl StoragePort for TestStorage {
+        fn events(&self) -> &dyn EventStore {
+            &self.events
+        }
+        fn objects(&self) -> &dyn ObjectStore {
+            &self.objects
+        }
+        fn sessions(&self) -> &dyn SessionStore {
+            self.sessions.as_ref()
+        }
+        fn jobs(&self) -> &dyn JobStore {
+            &self.jobs
+        }
+        fn metrics(&self) -> &dyn MetricStore {
+            &self.metrics
+        }
+    }
+
+    struct NoopJobPort;
+    #[async_trait]
+    impl JobPort for NoopJobPort {
+        async fn enqueue(&self, _: NewJob) -> CoreResult<JobId> {
+            Ok(JobId::new())
+        }
+        async fn dequeue(&self, _: &[JobKind]) -> CoreResult<Option<Job>> {
+            Ok(None)
+        }
+        async fn complete(&self, _: &JobId, _: JobResult) -> CoreResult<()> {
+            Ok(())
+        }
+        async fn hold_for_approval(&self, _: &JobId, _: JobResult) -> CoreResult<()> {
+            Ok(())
+        }
+        async fn fail(&self, _: &JobId, _: String) -> CoreResult<()> {
+            Ok(())
+        }
+        async fn schedule(&self, _: NewJob, _: &str) -> CoreResult<JobId> {
+            Ok(JobId::new())
+        }
+        async fn cancel(&self, _: &JobId) -> CoreResult<()> {
+            Ok(())
+        }
+        async fn approve(&self, _: &JobId) -> CoreResult<()> {
+            Ok(())
+        }
+        async fn list(&self, _: JobFilter) -> CoreResult<Vec<Job>> {
+            Ok(vec![])
+        }
+    }
+
+    fn build_scheduler(
+        sessions: Box<dyn SessionStore>,
+    ) -> (rusvel_cron::CronScheduler, Arc<dyn StoragePort>) {
+        let storage: Arc<dyn StoragePort> = Arc::new(TestStorage {
+            objects: MemObjects::new(),
+            events: NoopEvents,
+            sessions,
+            jobs: NoopJobStore,
+            metrics: NoopMetrics,
+        });
+        let jobs: Arc<dyn JobPort> = Arc::new(NoopJobPort);
+        let scheduler = rusvel_cron::CronScheduler::new(storage.clone(), jobs);
+        (scheduler, storage)
+    }
+
+    #[tokio::test]
+    async fn seed_noop_when_demo_unset() {
+        let (scheduler, storage) = build_scheduler(Box::new(OneSessionStore {
+            id: SessionId::new(),
+        }));
+        seed_harvest_demo(&scheduler, &storage, None).await.unwrap();
+        assert_eq!(scheduler.list().await.unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn seed_noop_when_demo_unrelated_value() {
+        let (scheduler, storage) = build_scheduler(Box::new(OneSessionStore {
+            id: SessionId::new(),
+        }));
+        seed_harvest_demo(&scheduler, &storage, Some("other"))
+            .await
+            .unwrap();
+        assert_eq!(scheduler.list().await.unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn seed_skips_when_no_session_available() {
+        let (scheduler, storage) = build_scheduler(Box::new(EmptySessionStore));
+        seed_harvest_demo(&scheduler, &storage, Some("harvest"))
+            .await
+            .unwrap();
+        assert_eq!(scheduler.list().await.unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn seed_creates_schedule_then_is_idempotent() {
+        let (scheduler, storage) = build_scheduler(Box::new(OneSessionStore {
+            id: SessionId::new(),
+        }));
+
+        seed_harvest_demo(&scheduler, &storage, Some("harvest"))
+            .await
+            .unwrap();
+        let listed = scheduler.list().await.unwrap();
+        assert_eq!(listed.len(), 1);
+        let only = &listed[0];
+        assert_eq!(only.name, HARVEST_DEMO_SCHEDULE_NAME);
+        assert_eq!(
+            only.event_kind,
+            harvest_engine::events::HARVEST_AUTO_SCAN_CRON_KIND
+        );
+
+        seed_harvest_demo(&scheduler, &storage, Some("harvest"))
+            .await
+            .unwrap();
+        assert_eq!(scheduler.list().await.unwrap().len(), 1);
+    }
 }

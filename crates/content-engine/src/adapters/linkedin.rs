@@ -139,11 +139,13 @@ impl PlatformAdapter for LinkedInAdapter {
         }
 
         // Fallback: try response body if header missing
-        let post_id = post_id.or_else(|| {
-            serde_json::from_slice::<serde_json::Value>(&body_bytes)
-                .ok()
-                .and_then(|v| v["id"].as_str().map(String::from))
-        }).unwrap_or_else(|| "unknown".into());
+        let post_id = post_id
+            .or_else(|| {
+                serde_json::from_slice::<serde_json::Value>(&body_bytes)
+                    .ok()
+                    .and_then(|v| v["id"].as_str().map(String::from))
+            })
+            .unwrap_or_else(|| "unknown".into());
 
         Ok(PublishResult {
             post_id: post_id.clone(),
@@ -277,7 +279,10 @@ mod tests {
     async fn missing_person_id_returns_error() {
         struct TokenOnlyCfg;
         impl ConfigPort for TokenOnlyCfg {
-            fn get_value(&self, key: &str) -> rusvel_core::error::Result<Option<serde_json::Value>> {
+            fn get_value(
+                &self,
+                key: &str,
+            ) -> rusvel_core::error::Result<Option<serde_json::Value>> {
                 if key == "linkedin_token" {
                     return Ok(Some(json!("tok")));
                 }

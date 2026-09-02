@@ -31,6 +31,7 @@ pub mod jobs;
 pub mod kits;
 pub mod knowledge;
 pub mod mcp_servers;
+pub mod operator_runtime;
 pub mod pipeline_runner;
 pub mod playbooks;
 pub(crate) mod request_id;
@@ -40,7 +41,6 @@ pub mod secrets;
 pub mod skills;
 pub(crate) mod sse_helpers;
 pub mod system;
-pub mod operator_runtime;
 pub mod terminal;
 pub mod visual_report;
 pub mod webhooks;
@@ -159,11 +159,7 @@ fn cors_allow_origin_from_env() -> AllowOrigin {
     const ENV: &str = "RUSVEL_CORS_ORIGINS";
     let defaults = default_cors_header_values();
     let raw = std::env::var(ENV).ok();
-    let Some(raw) = raw
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    else {
+    let Some(raw) = raw.as_deref().map(str::trim).filter(|s| !s.is_empty()) else {
         return AllowOrigin::list(defaults);
     };
     let mut origins: Vec<HeaderValue> = raw
@@ -199,7 +195,7 @@ pub fn build_router_with_frontend(
     frontend_dir: Option<std::path::PathBuf>,
 ) -> Router {
     let shared = Arc::new(state);
-    let _ = automation::register_app_state_for_worker(shared.clone());
+    let () = automation::register_app_state_for_worker(shared.clone());
 
     let api = Router::new()
         .route("/api/health", get(routes::health))
@@ -579,7 +575,10 @@ pub fn build_router_with_frontend(
             "/api/system/operator-prefs",
             axum::routing::put(operator_runtime::put_operator_prefs),
         )
-        .route("/api/system/shutdown", post(operator_runtime::post_shutdown))
+        .route(
+            "/api/system/shutdown",
+            post(operator_runtime::post_shutdown),
+        )
         .route("/api/system/reexec", post(operator_runtime::post_reexec))
         .route("/api/system/notify", post(system::notify))
         .route("/api/system/fix", post(system::self_fix))

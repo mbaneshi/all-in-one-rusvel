@@ -472,7 +472,7 @@ mod tests {
             }
         }
 
-        let mut multi = crate::MultiProvider::new();
+        let multi = crate::MultiProvider::new();
         multi.register(
             ModelProvider::Other("cursor".into()),
             Arc::new(FakeCursor { tag: "cursor" }),

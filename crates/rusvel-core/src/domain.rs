@@ -371,8 +371,18 @@ fn estimate_claude_usd(model: &str, in_m: f64, out_m: f64) -> f64 {
     let m = model.to_ascii_lowercase();
     let (inp, outp) = if m.contains("haiku") {
         (1.0, 5.0)
-    } else if m.contains("opus") {
+    } else if m.contains("fable") || m.contains("mythos") {
+        (10.0, 50.0)
+    } else if m.contains("opus-4-2025")
+        || m.contains("opus-4-1")
+        || m.contains("opus-3")
+        || m.contains("3-opus")
+    {
+        // Opus 4 / 4.1 / 3 legacy pricing, kept for historical cost records.
         (15.0, 75.0)
+    } else if m.contains("opus") {
+        // Opus 4.5+ and Opus 5 pricing.
+        (5.0, 25.0)
     } else {
         (3.0, 15.0)
     };

@@ -34,11 +34,7 @@ fn resolve_string(s: &str, context: &Value) -> String {
     match env.render_str(s, ctx) {
         Ok(out) => out,
         Err(e) => {
-            if std::env::var("RUSVEL_FLOW_TEMPLATE_DEBUG")
-                .ok()
-                .as_deref()
-                == Some("1")
-            {
+            if std::env::var("RUSVEL_FLOW_TEMPLATE_DEBUG").ok().as_deref() == Some("1") {
                 tracing::warn!(error = %e, template = %s, "flow node parameter template render failed");
             }
             s.to_string()
@@ -125,9 +121,6 @@ mod tests {
             ctx.pointer("/flow_trigger/rusvel/job_id"),
             Some(&serde_json::json!("abc"))
         );
-        assert_eq!(
-            ctx.pointer("/upstream/n1/x"),
-            Some(&serde_json::json!(2))
-        );
+        assert_eq!(ctx.pointer("/upstream/n1/x"), Some(&serde_json::json!(2)));
     }
 }
