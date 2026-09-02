@@ -443,11 +443,20 @@ pub async fn dept_chat(
         }
     }
 
+    // Skill descriptions (progressive disclosure, issue #18): name + one-line
+    // description only, so the agent knows what exists without paying for
+    // every skill's full prompt_template on every turn. Call skill.load to
+    // fetch a specific template. Static per-department, so it belongs in the
+    // cacheable prefix below, not the per-session dynamic tail.
+    if let Some(manifest) = state.dept_manifests.get(&dept) {
+        append_skill_descriptions(&mut resolved.system_prompt, &dept, manifest);
+    }
+
     // ═══ Cache boundary ═══
     // Everything above is stable per-department (persona, capabilities, agent
-    // override). Everything below is dynamic per-session (rules, context pack,
-    // RAG, chat mode). The Claude adapter splits on this marker and applies
-    // cache_control: { type: "ephemeral" } to the static prefix.
+    // override, skill descriptions). Everything below is dynamic per-session
+    // (rules, context pack, RAG, chat mode). The Claude adapter splits on this
+    // marker and applies cache_control: { type: "ephemeral" } to the static prefix.
     resolved
         .system_prompt
         .push_str(&format!("\n{SYSTEM_PROMPT_CACHE_BOUNDARY}\n"));
@@ -817,6 +826,26 @@ pub async fn dept_events(
 
 // ── Helpers ──────────────────────────────────────────────────
 
+/// Append a `--- Skills ---` block listing each manifest skill's name and
+/// description (not its full `prompt_template`) — progressive disclosure,
+/// issue #18. No-op when the department declares no skills.
+fn append_skill_descriptions(
+    system_prompt: &mut String,
+    dept: &str,
+    manifest: &rusvel_core::department::DepartmentManifest,
+) {
+    if manifest.skills.is_empty() {
+        return;
+    }
+    system_prompt.push_str("\n\n--- Skills ---\n");
+    for skill in &manifest.skills {
+        system_prompt.push_str(&format!(
+            "- {}: {} (skill.load department_id=\"{}\" name=\"{}\" for the full template)\n",
+            skill.name, skill.description, dept, skill.name
+        ));
+    }
+}
+
 fn build_dept_prompt(system_prompt: &str, history: &[ChatMessage], user_message: &str) -> String {
     let mut parts = Vec::new();
     parts.push(format!("<system>\n{system_prompt}\n</system>"));
@@ -874,4 +903,39 @@ fn extract_agent_mention(message: &str) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusvel_core::department::{DepartmentManifest, SkillContribution};
+
+    #[test]
+    fn append_skill_descriptions_lists_name_and_description_not_template() {
+        let mut manifest = DepartmentManifest::new("content", "Content");
+        manifest.skills = vec![SkillContribution {
+            name: "Blog Draft".into(),
+            description: "Draft a blog post from topic and key points".into(),
+            prompt_template: "Write a blog post about: {{topic}}".into(),
+        }];
+
+        let mut prompt = "You are the content department.".to_string();
+        append_skill_descriptions(&mut prompt, "content", &manifest);
+
+        assert!(prompt.contains("--- Skills ---"));
+        assert!(prompt.contains("Blog Draft"));
+        assert!(prompt.contains("Draft a blog post from topic and key points"));
+        assert!(prompt.contains("skill.load department_id=\"content\" name=\"Blog Draft\""));
+        // Progressive disclosure: the full template is NOT inlined into the
+        // system prompt — only fetched on demand via skill.load.
+        assert!(!prompt.contains("Write a blog post about"));
+    }
+
+    #[test]
+    fn append_skill_descriptions_is_noop_for_departments_with_no_skills() {
+        let manifest = DepartmentManifest::new("messaging", "Messaging");
+        let mut prompt = "You are the messaging department.".to_string();
+        append_skill_descriptions(&mut prompt, "messaging", &manifest);
+        assert_eq!(prompt, "You are the messaging department.");
+    }
 }

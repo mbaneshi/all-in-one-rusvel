@@ -315,6 +315,7 @@ async fn test_router() -> (
         registry: DepartmentRegistry::load(
             PathBuf::from("/__no_such__/departments.toml").as_path(),
         ),
+        dept_manifests: std::collections::HashMap::new(),
         embedding: None,
         vector_store: None,
         memory: memory.clone(),

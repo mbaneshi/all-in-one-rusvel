@@ -91,11 +91,13 @@ impl RegistrationContext {
     /// all subsystem contributions (tools, event subscriptions, job handlers).
     pub fn finalize(self, failed_departments: Vec<(String, String)>) -> DepartmentsBootArtifacts {
         let registry = DepartmentRegistry::from_manifests(&self.manifests);
+        let manifests = self.manifests;
         let tools = self.tools.into_tools();
         let event_subscriptions = self.event_handlers.into_subscriptions();
         let job_handlers = self.job_handlers.into_handlers();
         DepartmentsBootArtifacts {
             registry,
+            manifests,
             tools,
             event_subscriptions,
             job_handlers,
@@ -107,6 +109,12 @@ impl RegistrationContext {
 /// Output of [`RegistrationContext::finalize`]: registry and collected registrations.
 pub struct DepartmentsBootArtifacts {
     pub registry: DepartmentRegistry,
+    /// The full manifests collected during boot — `DepartmentRegistry`/`DepartmentDef`
+    /// is a reduced projection (id/name/icon/system_prompt/…) that drops contributions
+    /// like `skills`, `personas`, and `rules`. Callers that need those (e.g. injecting
+    /// skill descriptions into a department's chat system prompt) should key off this
+    /// instead of `registry`.
+    pub manifests: Vec<DepartmentManifest>,
     pub tools: Vec<ToolRegistration>,
     pub event_subscriptions: Vec<EventSubscription>,
     pub job_handlers: HashMap<String, JobHandlerEntry>,

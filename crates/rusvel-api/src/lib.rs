@@ -108,6 +108,10 @@ pub struct AppState {
     pub storage: Arc<dyn StoragePort>,
     pub profile: Option<UserProfile>,
     pub registry: DepartmentRegistry,
+    /// Full ADR-014 manifests keyed by department id — `registry` above is a
+    /// reduced projection that drops `skills`/`personas`/`rules`; use this when
+    /// those contributions are needed (e.g. skill descriptions in chat prompts).
+    pub dept_manifests: HashMap<String, rusvel_core::department::DepartmentManifest>,
     pub embedding: Option<Arc<dyn EmbeddingPort>>,
     pub vector_store: Option<Arc<dyn VectorStorePort>>,
     /// Session-scoped FTS memory (SQLite + FTS5); required for hybrid search.

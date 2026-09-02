@@ -309,6 +309,7 @@ async fn build_harness_with_auth_and_gtm(
         registry: DepartmentRegistry::load(
             PathBuf::from("/__no_such__/departments.toml").as_path(),
         ),
+        dept_manifests: std::collections::HashMap::new(),
         embedding: None,
         vector_store: None,
         memory: memory.clone(),

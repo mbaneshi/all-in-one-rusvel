@@ -11,11 +11,14 @@ pub mod flow;
 mod git;
 pub mod memory;
 mod shell;
+mod skill_load;
 pub mod terminal_tools;
 pub mod tool_search;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
+use rusvel_core::department::DepartmentManifest;
 use rusvel_core::ports::{
     AgentPort, BrowserPort, EventPort, MemoryPort, StoragePort, TerminalPort,
 };
@@ -68,4 +71,14 @@ pub async fn register_browser_tools(registry: &ToolRegistry, browser_port: Arc<d
 /// Register `forge_save_artifact` (S-049).
 pub async fn register_artifact_tools(registry: &ToolRegistry, storage: Arc<dyn StoragePort>) {
     let _ = artifacts::register(registry, storage).await;
+}
+
+/// Register `skill.load` — fetches a department manifest skill's full prompt
+/// template on demand (issue #18: progressive disclosure). `dept_manifests`
+/// is keyed by department id.
+pub async fn register_skill_tools(
+    registry: &ToolRegistry,
+    dept_manifests: HashMap<String, DepartmentManifest>,
+) {
+    skill_load::register(registry, dept_manifests).await;
 }

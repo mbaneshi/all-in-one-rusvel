@@ -1111,6 +1111,7 @@ async fn main() -> Result<()> {
     .await?;
     let rusvel_core::department::DepartmentsBootArtifacts {
         registry,
+        manifests: dept_manifest_list,
         event_subscriptions,
         failed_departments,
         tools: dept_tools,
@@ -1118,6 +1119,14 @@ async fn main() -> Result<()> {
     } = dept_registry;
     let dept_tool_count = dept_tools.len();
     rusvel_tool::register_department_tools(&tool_registry, dept_tools).await;
+    let dept_manifests: std::collections::HashMap<
+        String,
+        rusvel_core::department::DepartmentManifest,
+    > = dept_manifest_list
+        .into_iter()
+        .map(|m| (m.id.clone(), m))
+        .collect();
+    rusvel_builtin_tools::register_skill_tools(&tool_registry, dept_manifests.clone()).await;
     tracing::info!("ADR-014 boot: {dept_tool_count} department tools registered into ToolPort");
     let boot_time = std::time::Instant::now();
     tracing::info!(
@@ -2321,6 +2330,7 @@ async fn main() -> Result<()> {
             storage: db.clone() as Arc<dyn StoragePort>,
             profile,
             registry,
+            dept_manifests: dept_manifests.clone(),
             embedding,
             vector_store,
             memory: memory.clone(),
@@ -2475,6 +2485,7 @@ async fn main() -> Result<()> {
             storage: db.clone() as Arc<dyn StoragePort>,
             profile,
             registry,
+            dept_manifests: dept_manifests.clone(),
             embedding,
             vector_store,
             memory: memory.clone(),
