@@ -399,6 +399,46 @@ impl ToolPort for ScopedToolRegistry {
 }
 
 // ════════════════════════════════════════════════════════════════════
+//  Department bridge (ADR-014)
+// ════════════════════════════════════════════════════════════════════
+
+/// Register every department-collected [`ToolRegistration`] into a
+/// [`ToolRegistry`] so it becomes reachable through [`ToolPort`] — by the
+/// agent runtime's tool loop, `tool_search`, and the MCP server.
+///
+/// [`ToolRegistrar::add`](rusvel_core::department::ToolRegistrar::add) collects
+/// tools during department boot, but its doc comment ("After boot, the host
+/// transfers these to the `ToolPort` implementation") was never actually
+/// wired up — this closes that gap.
+pub async fn register_department_tools(
+    registry: &ToolRegistry,
+    tools: Vec<rusvel_core::department::ToolRegistration>,
+) {
+    for t in tools {
+        let definition = ToolDefinition {
+            name: t.name,
+            description: t.description,
+            parameters: t.parameters_schema,
+            searchable: false,
+            metadata: serde_json::json!({ "department_id": t.department_id }),
+        };
+        let handler = t.handler;
+        let bridged: ToolHandler = Arc::new(move |args| {
+            let handler = handler.clone();
+            Box::pin(async move {
+                let out = handler(args).await?;
+                Ok(ToolResult {
+                    success: !out.is_error,
+                    output: rusvel_core::domain::Content::text(out.content),
+                    metadata: out.metadata,
+                })
+            })
+        });
+        let _ = registry.register_with_handler(definition, bridged).await;
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════
 //  Tests
 // ════════════════════════════════════════════════════════════════════
 
@@ -576,5 +616,67 @@ mod tests {
             .await
             .unwrap();
         assert!(r.success);
+    }
+
+    #[tokio::test]
+    async fn register_department_tools_bridges_toolregistrar_into_toolport() {
+        use rusvel_core::department::{ToolOutput, ToolRegistrar};
+
+        let mut reg = ToolRegistrar::new();
+        reg.add(
+            "harvest",
+            "harvest.scan",
+            "Scan for opportunities",
+            json!({"type": "object", "properties": {}}),
+            Arc::new(|_args| {
+                Box::pin(async move {
+                    Ok(ToolOutput {
+                        content: "3 opportunities found".into(),
+                        is_error: false,
+                        metadata: json!({}),
+                    })
+                })
+            }),
+        );
+        reg.add(
+            "harvest",
+            "harvest.broken",
+            "Always fails",
+            json!({"type": "object", "properties": {}}),
+            Arc::new(|_args| {
+                Box::pin(async move {
+                    Ok(ToolOutput {
+                        content: "boom".into(),
+                        is_error: true,
+                        metadata: json!({}),
+                    })
+                })
+            }),
+        );
+
+        let registry = ToolRegistry::new();
+        register_department_tools(&registry, reg.into_tools()).await;
+
+        let names: Vec<String> = registry.list().into_iter().map(|t| t.name).collect();
+        assert!(names.contains(&"harvest.scan".to_string()));
+        assert!(names.contains(&"harvest.broken".to_string()));
+
+        // department_id carried through as tool metadata for callers that want it.
+        let def = registry
+            .list()
+            .into_iter()
+            .find(|t| t.name == "harvest.scan")
+            .unwrap();
+        assert_eq!(def.metadata["department_id"], "harvest");
+
+        let ok = registry.call("harvest.scan", json!({})).await.unwrap();
+        assert!(ok.success);
+        match &ok.output.parts[0] {
+            rusvel_core::domain::Part::Text(s) => assert_eq!(s, "3 opportunities found"),
+            _ => panic!("expected text part"),
+        }
+
+        let failed = registry.call("harvest.broken", json!({})).await.unwrap();
+        assert!(!failed.success);
     }
 }

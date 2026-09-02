@@ -241,11 +241,20 @@ fn tool_definitions() -> serde_json::Value {
 pub struct RusvelMcp {
     engine: Arc<ForgeEngine>,
     session: Arc<dyn SessionPort>,
+    tools: Arc<dyn rusvel_core::ports::ToolPort>,
 }
 
 impl RusvelMcp {
-    pub fn new(engine: Arc<ForgeEngine>, session: Arc<dyn SessionPort>) -> Self {
-        Self { engine, session }
+    pub fn new(
+        engine: Arc<ForgeEngine>,
+        session: Arc<dyn SessionPort>,
+        tools: Arc<dyn rusvel_core::ports::ToolPort>,
+    ) -> Self {
+        Self {
+            engine,
+            session,
+            tools,
+        }
     }
 
     /// Handle an MCP method call and return a JSON result.
@@ -260,11 +269,39 @@ impl RusvelMcp {
                 "serverInfo": { "name": "rusvel-mcp", "version": "0.1.0" },
                 "capabilities": { "tools": {} }
             })),
-            "tools/list" => Ok(serde_json::json!({ "tools": tool_definitions() })),
+            "tools/list" => Ok(serde_json::json!({ "tools": self.all_tool_definitions() })),
             "tools/call" => self.handle_tool_call(params).await,
             "notifications/initialized" | "notifications/cancelled" => Ok(serde_json::Value::Null),
             _ => Err(McpError::UnknownTool(method.into())),
         }
+    }
+
+    /// The hand-written MCP-native tools, plus every tool registered on the
+    /// [`rusvel_core::ports::ToolPort`] — which since the ADR-014 bridge
+    /// (`rusvel_tool::register_department_tools`) includes every department's
+    /// tools (`harvest.*`, `content.*`, `code.*`, …), the built-in tools, and
+    /// the browser/terminal/engine tools. This is issue #13: MCP-first
+    /// exposure of all department toolsets.
+    fn all_tool_definitions(&self) -> Vec<serde_json::Value> {
+        let mut native = match tool_definitions() {
+            serde_json::Value::Array(a) => a,
+            _ => vec![],
+        };
+        let native_names: std::collections::HashSet<String> = native
+            .iter()
+            .filter_map(|t| t["name"].as_str().map(String::from))
+            .collect();
+        for def in self.tools.list() {
+            if native_names.contains(def.name.as_str()) {
+                continue;
+            }
+            native.push(serde_json::json!({
+                "name": def.name,
+                "description": def.description,
+                "inputSchema": def.parameters,
+            }));
+        }
+        native
     }
 
     async fn handle_tool_call(
@@ -494,13 +531,52 @@ impl RusvelMcp {
                     }),
                 }
             }
-            other => return Err(McpError::UnknownTool(other.into())),
+            other => return self.call_registry_tool(other, args.clone()).await,
         };
 
         Ok(serde_json::json!({
             "content": [{ "type": "text", "text": result.to_string() }]
         }))
     }
+
+    /// Dispatch a tool call to `self.tools` — the [`rusvel_core::ports::ToolPort`]
+    /// bridge — for any tool name not handled natively above. Covers every
+    /// department tool (`harvest.scan`, `content.draft`, …), built-in tool,
+    /// and browser/terminal/engine tool registered on the same registry the
+    /// agent runtime's tool loop uses.
+    async fn call_registry_tool(
+        &self,
+        name: &str,
+        args: serde_json::Value,
+    ) -> Result<serde_json::Value, McpError> {
+        if self.tools.schema(name).is_none() {
+            return Err(McpError::UnknownTool(name.into()));
+        }
+        let result = self
+            .tools
+            .call(name, args)
+            .await
+            .map_err(McpError::Engine)?;
+        Ok(serde_json::json!({
+            "content": [{ "type": "text", "text": extract_text(&result.output) }],
+            "isError": !result.success,
+        }))
+    }
+}
+
+/// Concatenate the text parts of a [`Content`] value for MCP's plain-text
+/// `content` blocks. Non-text parts (images, tool calls, …) are dropped —
+/// department tools currently only ever return text.
+fn extract_text(content: &Content) -> String {
+    content
+        .parts
+        .iter()
+        .filter_map(|p| match p {
+            Part::Text(t) => Some(t.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("")
 }
 
 fn parse_session_id(args: &serde_json::Value) -> Result<SessionId, McpError> {

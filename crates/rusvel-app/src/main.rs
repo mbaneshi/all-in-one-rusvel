@@ -1113,8 +1113,12 @@ async fn main() -> Result<()> {
         registry,
         event_subscriptions,
         failed_departments,
+        tools: dept_tools,
         ..
     } = dept_registry;
+    let dept_tool_count = dept_tools.len();
+    rusvel_tool::register_department_tools(&tool_registry, dept_tools).await;
+    tracing::info!("ADR-014 boot: {dept_tool_count} department tools registered into ToolPort");
     let boot_time = std::time::Instant::now();
     tracing::info!(
         "ADR-014 boot: {} departments registered",
@@ -2248,7 +2252,11 @@ async fn main() -> Result<()> {
     } else if cli.mcp {
         // --mcp flag: start MCP server over stdio (JSON-RPC)
         tracing::info!("Starting MCP server on stdio...");
-        let mcp = Arc::new(RusvelMcp::new(forge.clone(), sessions.clone()));
+        let mcp = Arc::new(RusvelMcp::new(
+            forge.clone(),
+            sessions.clone(),
+            tools.clone(),
+        ));
         rusvel_mcp::run_stdio(mcp)
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -2360,7 +2368,11 @@ async fn main() -> Result<()> {
             tracing::warn!("No frontend found — UI will not be available");
         }
         let base = rusvel_api::build_router_with_frontend(state, frontend_dir);
-        let mcp_srv = Arc::new(RusvelMcp::new(forge.clone(), sessions.clone()));
+        let mcp_srv = Arc::new(RusvelMcp::new(
+            forge.clone(),
+            sessions.clone(),
+            tools.clone(),
+        ));
         let router =
             rusvel_mcp::http::nest_mcp_http(base, mcp_srv, rusvel_mcp::http::McpAuth::from_env());
         let addr = http_addr;

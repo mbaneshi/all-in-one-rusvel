@@ -97,6 +97,12 @@ impl ToolPort for StubTool {
 }
 
 async fn build_rusvel_mcp() -> (Arc<RusvelMcp>, tempfile::TempDir) {
+    build_rusvel_mcp_with_tools(Arc::new(StubTool)).await
+}
+
+async fn build_rusvel_mcp_with_tools(
+    tools: Arc<dyn ToolPort>,
+) -> (Arc<RusvelMcp>, tempfile::TempDir) {
     let dir = tempdir().unwrap();
     let base = dir.path();
     let db: Arc<Database> = Arc::new(Database::open(base.join("rusvel.db")).unwrap());
@@ -109,7 +115,6 @@ async fn build_rusvel_mcp() -> (Arc<RusvelMcp>, tempfile::TempDir) {
     let jobs: Arc<dyn JobPort> = db.clone() as Arc<dyn JobPort>;
     let storage: Arc<dyn StoragePort> = db.clone();
     let sessions: Arc<dyn SessionPort> = Arc::new(SessionAdapter(storage.clone()));
-    let tools: Arc<dyn ToolPort> = Arc::new(StubTool);
     let agent_runtime = Arc::new(AgentRuntime::new(
         Arc::new(StubLlm),
         tools.clone(),
@@ -126,7 +131,7 @@ async fn build_rusvel_mcp() -> (Arc<RusvelMcp>, tempfile::TempDir) {
         config,
     ));
 
-    let mcp = Arc::new(RusvelMcp::new(forge, sessions));
+    let mcp = Arc::new(RusvelMcp::new(forge, sessions, tools));
     (mcp, dir)
 }
 
@@ -199,4 +204,107 @@ async fn handle_method_initialize_and_tools_list_stdio_path() {
     assert!(!tools.is_empty());
     let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
     assert!(names.contains(&"session_list"));
+}
+
+/// Issue #13 (MCP-first): tools registered on the shared [`ToolPort`] — the
+/// same registry `rusvel_tool::register_department_tools` bridges every
+/// department's `ToolRegistrar` tools into — must surface in `tools/list`
+/// alongside the hand-written MCP-native tools.
+#[tokio::test]
+async fn tools_list_includes_toolport_registered_tools() {
+    let registry = rusvel_tool::ToolRegistry::new();
+    registry
+        .register_with_handler(
+            rusvel_core::domain::ToolDefinition {
+                name: "harvest.scan".into(),
+                description: "Scan for opportunities".into(),
+                parameters: json!({"type": "object", "properties": {}}),
+                searchable: false,
+                metadata: json!({"department_id": "harvest"}),
+            },
+            Arc::new(|_args| {
+                Box::pin(async move {
+                    Ok(ToolResult {
+                        success: true,
+                        output: Content::text("3 opportunities found"),
+                        metadata: json!({}),
+                    })
+                })
+            }),
+        )
+        .await
+        .unwrap();
+    let tools: Arc<dyn ToolPort> = Arc::new(registry);
+
+    let (mcp, _guard) = build_rusvel_mcp_with_tools(tools).await;
+
+    let listed = mcp
+        .handle_method("tools/list", serde_json::json!({}))
+        .await
+        .expect("tools/list");
+    let tools = listed["tools"].as_array().expect("tools array");
+    let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
+    // native MCP tool still present alongside the bridged department tool
+    assert!(names.contains(&"session_list"));
+    assert!(names.contains(&"harvest.scan"));
+}
+
+/// A `tools/call` for a name not handled natively falls through to the
+/// [`ToolPort`] bridge, and the result is wrapped in the MCP content shape.
+#[tokio::test]
+async fn tools_call_dispatches_unknown_native_names_to_toolport() {
+    let registry = rusvel_tool::ToolRegistry::new();
+    registry
+        .register_with_handler(
+            rusvel_core::domain::ToolDefinition {
+                name: "content.draft".into(),
+                description: "Draft a content item".into(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": { "topic": { "type": "string" } },
+                    "required": ["topic"]
+                }),
+                searchable: false,
+                metadata: json!({"department_id": "content"}),
+            },
+            Arc::new(|args: serde_json::Value| {
+                Box::pin(async move {
+                    let topic = args["topic"].as_str().unwrap_or("(none)").to_string();
+                    Ok(ToolResult {
+                        success: true,
+                        output: Content::text(format!("draft about {topic}")),
+                        metadata: json!({}),
+                    })
+                })
+            }),
+        )
+        .await
+        .unwrap();
+    let tools: Arc<dyn ToolPort> = Arc::new(registry);
+
+    let (mcp, _guard) = build_rusvel_mcp_with_tools(tools).await;
+
+    let out = mcp
+        .handle_method(
+            "tools/call",
+            json!({ "name": "content.draft", "arguments": { "topic": "rust" } }),
+        )
+        .await
+        .expect("tools/call");
+    assert_eq!(out["content"][0]["text"], "draft about rust");
+    assert_eq!(out["isError"], false);
+}
+
+/// A name unknown to both the native tools and the `ToolPort` registry is
+/// still rejected — the bridge must not silently swallow unknown-tool errors.
+#[tokio::test]
+async fn tools_call_unknown_name_still_errors() {
+    let (mcp, _guard) = build_rusvel_mcp().await;
+    let err = mcp
+        .handle_method(
+            "tools/call",
+            json!({ "name": "totally.unregistered", "arguments": {} }),
+        )
+        .await;
+    assert!(err.is_err());
 }
