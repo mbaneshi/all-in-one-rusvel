@@ -1,3 +1,16 @@
+# Freelancer-OS Research Questions — Raw Notes (2026-04-01)
+
+> Historical session transcript, filed as-is from repo root (`plan4.md`).
+> Proposes a research pass (Upwork/Toptal APIs, LinkedIn content pipelines,
+> MCP server landscape, competitor teardown of Dust.tt/Relevance AI/n8n)
+> before designing the three core workflows: find work, build brand, win
+> clients. As of 2026-09-02, superseded in direction by the ledger decision
+> `strategy-continue-rust-not-bun-rewrite` — any research here should be
+> re-scoped against the existing Rust harvest/content/gtm engines rather than
+> a fresh stack.
+
+---
+
 
   And here's the critical insight: you use Claude Code all day. Your app doesn't need to replace that. It needs to be the business brain running alongside it — the thing
   that finds you work, builds your brand, and manages your pipeline while you build.

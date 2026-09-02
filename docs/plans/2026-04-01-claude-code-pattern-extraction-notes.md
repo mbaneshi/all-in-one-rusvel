@@ -1,3 +1,14 @@
+# Claude Code Pattern Extraction — Raw Notes (2026-04-01)
+
+> Historical session transcript, filed as-is from repo root (`plan3.md`). Not a
+> reviewed plan. Items 1 (bootstrap fast-paths) and 2 (prompt caching boundary)
+> were already implemented in commit `c4278ba` (hot-swap Claude provider,
+> prompt caching, deferred tool loading). The rest is unactioned as of
+> 2026-09-02 — see `docs/design/vision-v3.md` for the phased roadmap these
+> ideas were meant to feed.
+
+---
+
 
 ⏺ Now I see the full picture. Rusvel is already a serious system (55 crates, 73k LOC, hexagonal arch). The question is: what specific patterns from Claude Code's harness are
    worth stealing for rusvel?
