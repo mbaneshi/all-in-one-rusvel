@@ -9,6 +9,16 @@
 > - **Ollama and OpenAI stream natively** (SSE) — the batch-fallback gap is closed.
 > - **Claude adapter migrated to Claude 5 models** (`claude-opus-5` / `claude-sonnet-5` / `claude-haiku-4-5`), with adaptive thinking + effort support, prompt caching (`cache_control: ephemeral` on system), and current pricing in both `rusvel-llm::cost_tracking` and `rusvel-core::domain`.
 > - **`rusvel-evals` exists** — fixture-based eval crate (audit Option E) merged.
+>
+> **Update 2026-09-02:** department tools were registered (ADR-014 `ToolRegistrar`, 55 tools
+> across 13 departments) but never transferred to the `ToolPort` implementation — the
+> `DepartmentsBootArtifacts.tools` field was destructured with `..` and dropped in
+> `rusvel-app/src/main.rs`, so nothing could call them. `rusvel_tool::register_department_tools()`
+> now bridges them onto the shared `ToolRegistry`, and `rusvel-mcp`'s `tools/list`/`tools/call`
+> were extended to expose the same registry. Live `rusvel --mcp` now serves **94** tools (9
+> hand-written MCP-native + 85 on the `ToolPort` registry, including all 55 department tools).
+> The "MCP stdio tools: 6" and "registered agent tools: 22+" figures below predate this and are
+> now stale; see the table row updates.
 
 ---
 
@@ -60,8 +70,8 @@ Use the same host environment as normal development. Run `cargo test` from the *
 | Departments (booted `DepartmentApp`) | 14 |
 | Department crates (dept-*) | 14 |
 | Engines | 13 (6 wired + 7 skeletons, all via `DepartmentApp`) |
-| Registered agent tools | 22+ (built-in + `tool_search` + engine tools; optional memory, delegate, terminal, flow, browser) |
-| MCP stdio tools (`rusvel-mcp`) | 6 |
+| Registered agent tools (`ToolPort` registry) | 85 as of 2026-09-02 (built-in + `tool_search` + engine tools + all 55 ADR-014 department tools, now bridged in; optional memory, delegate, terminal, flow, browser) |
+| MCP stdio tools (`rusvel-mcp`) | 94 as of 2026-09-02 (9 hand-written MCP-native + everything on the `ToolPort` registry) |
 
 ---
 
@@ -121,7 +131,7 @@ These features are wired from the binary entry [`crates/rusvel-app/src/main.rs`]
 
 **Code-to-content** — `POST /api/dept/content/from-code`.
 
-**MCP server (stdio)** — `--mcp` → `rusvel_mcp` JSON-RPC; **6** tools in `tool_definitions()`.
+**MCP server (stdio)** — `--mcp` → `rusvel_mcp` JSON-RPC; **9** hand-written tools in `tool_definitions()` plus every tool on the `ToolPort` registry (`RusvelMcp::all_tool_definitions()`), **94** total as of 2026-09-02 — closes #13.
 
 **MCP client** — `rusvel-mcp-client` for external servers.
 

@@ -119,8 +119,8 @@ frontend/                 SvelteKit 5 + Tailwind 4 (dept/[id], chat, database, f
 - **ModelTier routing** — Haiku/Sonnet/Opus + CostTracker in MetricStore
 - **ScopedToolRegistry** — Per-department tool filtering
 - **Deferred tool loading** — `tool_search` meta-tool (85% token savings)
-- **22+ registered tools** — 10 built-in (read_file, write_file, edit_file, glob, grep, bash, git_status, git_diff, git_log + tool_search) + 12 engine tools (harvest 5, content 5, code 2)
-- **MCP dispatch** — `--mcp` flag connects to `RusvelMcp::new()` in main.rs
+- **85 registered tools on the `ToolPort` registry** — 10 built-in (read_file, write_file, edit_file, glob, grep, bash, git_status, git_diff, git_log + tool_search) + 12 engine tools (harvest 5, content 5, code 2) + 55 ADR-014 department tools (bridged via `rusvel_tool::register_department_tools`, see ADR-014 in `docs/design/decisions.md`)
+- **MCP dispatch** — `--mcp` flag connects to `RusvelMcp::new()` in main.rs; `tools/list`/`tools/call` expose the full `ToolPort` registry (94 tools total: 9 MCP-native + 85 registry), closing issue #13
 - **Department Registry** — 14 booted departments, parameterized API routes, dynamic frontend route
 - **Chat** — SSE streaming per department + God Agent chat
 - **CRUD** — Agents, Skills, Rules, MCP Servers, Hooks, Workflows (all departments)
