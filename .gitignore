@@ -54,3 +54,6 @@ openclaw/
 # Local repo checkouts / reference clones (not part of RUSVEL source)
 repos/
 trend-repo/
+
+# claude-issue local drafts (see ~/.claude/docs/claude-issue.md)
+.claude-drafts/
