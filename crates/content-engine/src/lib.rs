@@ -16,14 +16,20 @@ use rusvel_core::ports::{AgentPort, EventPort, JobPort, StoragePort};
 
 pub mod adapters;
 pub mod analytics;
+pub mod avalai_media;
 pub mod calendar;
 pub mod code_bridge;
+pub mod media_gen;
 pub mod platform;
 pub mod writer;
 
 pub use adapters::devto::DevToAdapter;
 pub use analytics::ContentAnalytics;
+pub use avalai_media::AvalAiMediaGen;
 pub use calendar::{ContentCalendar, ScheduledPost};
+pub use media_gen::{
+    GeneratedImage, ImageGenRequest, ImageGenResult, ImagePayload, MediaGenPort, MockMediaGen,
+};
 pub use platform::{MockPlatformAdapter, PlatformAdapter, PostMetrics, PublishResult};
 pub use writer::{ContentReview, ContentWriter, build_code_prompt};
 
@@ -54,6 +60,7 @@ pub struct ContentEngine {
     calendar: ContentCalendar,
     analytics: ContentAnalytics,
     adapters: std::sync::Mutex<HashMap<String, Arc<dyn PlatformAdapter>>>,
+    media_gen: std::sync::Mutex<Option<Arc<dyn MediaGenPort>>>,
 }
 
 impl ContentEngine {
@@ -68,6 +75,7 @@ impl ContentEngine {
             calendar: ContentCalendar::new(Arc::clone(&storage), jobs),
             analytics: ContentAnalytics::new(Arc::clone(&storage)),
             adapters: std::sync::Mutex::new(HashMap::new()),
+            media_gen: std::sync::Mutex::new(None),
             storage,
             event_bus,
         }
@@ -83,6 +91,23 @@ impl ContentEngine {
     pub fn register_platform(&self, adapter: Arc<dyn PlatformAdapter>) {
         let key = format!("{:?}", adapter.platform());
         self.adapters.lock().unwrap().insert(key, adapter);
+    }
+
+    /// Register the media-generation adapter (e.g. [`AvalAiMediaGen`]) used
+    /// for image drafts. Optional — [`Self::generate_image`] errors clearly
+    /// if nothing is registered rather than silently no-op-ing.
+    pub fn register_media_gen(&self, adapter: Arc<dyn MediaGenPort>) {
+        *self.media_gen.lock().unwrap() = Some(adapter);
+    }
+
+    /// Generate an image via the registered media-gen adapter.
+    pub async fn generate_image(&self, request: ImageGenRequest) -> Result<ImageGenResult> {
+        let adapter = self.media_gen.lock().unwrap().clone().ok_or_else(|| {
+            RusvelError::Validation(
+                "no media-gen adapter registered — call register_media_gen first".into(),
+            )
+        })?;
+        adapter.generate_image(request).await
     }
 
     fn get_adapter(&self, platform: &Platform) -> Result<Arc<dyn PlatformAdapter>> {
