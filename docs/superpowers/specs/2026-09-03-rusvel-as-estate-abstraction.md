@@ -1,9 +1,60 @@
 # RUSVEL as the estate's abstraction layer
 
 **Date:** 2026-09-03
-**Status:** Draft — synthesizes a single session's research and discussion; nothing here is locked or built yet.
+**Status:** Locked (§3's role) and partially built. §9's step 1 (this spec) and step 5 (tenant-axis spike, expanded beyond the original narrow scope) are done — see **Update 2026-09-04** below. Steps 2 (ledger lock — done, differently: `d-001` directly, not a second supersede), 3 (issue), 4 (memo resolution) are still open.
 **Scope:** RUSVEL core (`dept-*`, `content-engine`, `harvest-engine`, `gtm-engine`) + the wider estate (`capability-tenant-infra`, `skill-eco`, `autobiz-kit`, `~/infra`) + the first real venture, `mbaneshi-ir-site`.
 **Supersedes (framing, not code):** ledger decision `strategy-rusvel-scope-vs-anthropic-native` (locked 2026-09-03, commit `0c64173`) sharpens into the position stated in §3 below.
+
+---
+
+## Update 2026-09-04 — what actually happened next
+
+Execution took a different concrete path than §9 outlined, driven by direct user
+correction along the way rather than following the spec mechanically — recorded here
+rather than silently editing history out of the sections below.
+
+- **§9 step 2 (lock a refined decision) happened directly**, not as a second supersede:
+  `d-001` in `ledger.jsonl` (commit `630751d`) states the role from §3 in one line.
+  `strategy-rusvel-scope-vs-anthropic-native` is `superseded`, not deleted.
+- **The `mbaneshi.ir` content-pipeline slice (§6-8) went through real revisions, not the
+  ordering this spec assumed:**
+  1. An AvalAI RFC (issue [#41](https://github.com/mbaneshi/rusvel/issues/41), discussion
+     [#42](https://github.com/mbaneshi/rusvel/discussions/42)) resolved §5's Q1/Q2/Q3:
+     text generation needed **zero new code** (`rusvel-llm::OpenAiProvider::with_base_url`
+     already covers OpenAI-compatible gateways; `llm_bootstrap.rs` already named AvalAI via
+     `OPENAI_BASE_URL`); image generation got a real `MediaGenPort`/`AvalAiMediaGen`
+     (commit `086ae20`), live-verified against the real API.
+  2. Checking `mbaneshi-ir-site`'s own issue tracker surfaced a **second RFC**
+     (mbaneshi-ir-site#12, "RFC-0001: mbaneshi.ir as the door to an owned platform") —
+     unratified, drafted five days before this spec, describing an almost identical
+     "agents with a human gate" capability for the same site via `capability-tenant-infra`.
+     A second RUSVEL RFC (issue [#43](https://github.com/mbaneshi/rusvel/issues/43),
+     discussion [#44](https://github.com/mbaneshi/rusvel/discussions/44)) was opened to
+     reconcile — **still open**, though the user's direction since ("Independent," then
+     "build it natively, content-factory's pack was reference material not the
+     destination") amounts to acting on Independent without formally closing the RFC.
+  3. A `content-factory` pack (`packs/mbaneshi/`, a different repo, commit `82eb049`) was
+     built as a candidate draft+render engine, then **explicitly superseded** by direct
+     user correction — reference material and real brand data, not the foundation.
+  4. **The tenant axis (§4-5) was then built for real**, natively, in `rusvel-core` +
+     `content-engine` — `TenantId`/`TenantProfile`/`TenantRegistry`, additive to every
+     existing `ContentEngine` method (commit `06da972`). Proven against mbaneshi's actual
+     `branding/brand-kernel.yaml` voice data.
+  5. **One concept → a full bundle** (caption, hashtags, carousel, video) was then built as
+     pure orchestration over `AgentPort` + the now-extended `MediaGenPort` (video added via
+     AvalAI's real async create→poll→download API) — no new port, per the user's explicit
+     "preserve core its own purpose as port and adapter" (commit `30aefd5`).
+- **Ports §5 mostly still unbuilt as named:** `CapabilityTenantInfraPort` and
+  `SkillEcoPort` remain undesigned beyond §5's one-line sketch. `IslandPort` likewise.
+  §6's "adapter location" open question resolved implicitly — RUSVEL reaches out
+  (§6 option (a)) — since the content pipeline now lives in `content-engine` directly.
+- **`.envrc` security note, unrelated to the plan but worth recording here:** it was
+  tracked in git despite matching a `.gitignore` line that was added *after* it was first
+  committed — gitignore doesn't retroactively untrack. Fixed (`fd117ed`) before any secret
+  entered history. Worth remembering as a general lesson, not just this repo's.
+
+See `docs/status/current-state.md`'s 2026-09-04 update for current numbers (751 tests,
+0 failures) and memory `project_rusvel_social_bundle_e2e` for the fullest account.
 
 ---
 

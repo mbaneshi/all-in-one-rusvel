@@ -19,6 +19,33 @@
 > hand-written MCP-native + 85 on the `ToolPort` registry, including all 55 department tools).
 > The "MCP stdio tools: 6" and "registered agent tools: 22+" figures below predate this and are
 > now stale; see the table row updates.
+>
+> **Update 2026-09-04:** RUSVEL's role was refined and locked in the ledger
+> (`strategy-rusvel-scope-vs-anthropic-native` superseded by `d-001`; see
+> [`docs/superpowers/specs/2026-09-03-rusvel-as-estate-abstraction.md`](../superpowers/specs/2026-09-03-rusvel-as-estate-abstraction.md)):
+> RUSVEL coordinates the wider estate rather than rebuilding it — narrow in what it
+> executes, broad in where it reaches. First concrete slice, built in `content-engine`:
+>
+> - **`rusvel-core::tenant`** — `TenantId` (a stable slug, not a UUID), `TenantProfile`,
+>   `TenantRegistry`. The tenant axis `dept-*`/`DepartmentApp` previously lacked (assumed
+>   tenant = self); additive, not a breaking change to any existing signature.
+> - **`content-engine::media_gen` + `avalai_media`** — `MediaGenPort` (engine-internal,
+>   ADR-006 precedent, mirrors `harvest-engine::HarvestSource`), implemented by
+>   `AvalAiMediaGen` against AvalAI (`https://api.avalai.ir`, OpenAI-compatible chat surface
+>   already served for free by `rusvel-llm::OpenAiProvider::with_base_url` — zero new code
+>   for text). Covers image generation (live-verified against the real API) and video
+>   generation (async create→poll→download, tested against a mock server — **not** yet run
+>   live, cost/duration unconfirmed).
+> - **`content-engine::social`** — `ContentEngine::create_social_bundle`: one concept → a
+>   coherent `SocialBundle` (caption, hashtags, multi-slide carousel, optional video) in a
+>   single structured `AgentPort` call, with per-slide images and video strictly opt-in.
+>   Adds no new port — orchestrates `AgentPort` + `MediaGenPort`, both pre-existing.
+>
+> `content-engine` test count: 63 (was ~7 before this update). Full workspace: **751** tests,
+> 0 failures (`cargo test --workspace`, re-verified 2026-09-04). See commits `630751d` (ledger
+> lock), `086ae20` (image adapter), `06da972` (tenant axis), `30aefd5` (social bundle),
+> `fd117ed` (`.envrc` was tracked despite matching a `.gitignore` pattern that predated it —
+> fixed before any secret entered history).
 
 ---
 
@@ -58,10 +85,10 @@ Use the same host environment as normal development. Run `cargo test` from the *
 
 | Metric | Count |
 |--------|------:|
-| Workspace members | 55 |
-| Rust lines of code (crates/*.rs) | ~73,058 |
-| Rust source files (crates/) | 301 |
-| Tests (approx., `cargo test`) | ~645 (0 failures, full workspace from repo root; sum of `running N tests` lines) |
+| Workspace members | 56 |
+| Rust lines of code (crates/*.rs) | ~80,055 |
+| Rust source files (crates/) | 320 |
+| Tests (approx., `cargo test`) | 751 (0 failures, full workspace from repo root, re-verified 2026-09-04; sum of `running N tests` lines) |
 | Test targets (approx., `cargo test --no-run`) | ~102 |
 | HTTP route chains (`lib.rs` `.route(`) | 153 |
 | API handler modules (`rusvel-api/src/*.rs` excl. lib) | 39 |
@@ -123,6 +150,10 @@ These features are wired from the binary entry [`crates/rusvel-app/src/main.rs`]
 **Engines (core depth)** — `CodeEngine`, `ContentEngine`, `HarvestEngine`, `FlowEngine`, `GtmEngine` instantiated with real logic; engine routes under `/api/dept/code/*`, `/api/dept/content/*`, `/api/dept/harvest/*`, `/api/dept/gtm/*`, `/api/flows/*`, playbooks, kits, brief, etc.
 **Content publishing** — `content-engine` includes **real HTTP adapters** for DEV.to, Twitter/X, LinkedIn ([`adapters/`](../../crates/content-engine/src/adapters/)); credentials via `ConfigPort` keys (e.g. `twitter_token`, `linkedin_token`).
 
+**Media generation + one-concept social bundles** (2026-09-04) — `MediaGenPort` ([`media_gen.rs`](../../crates/content-engine/src/media_gen.rs)) implemented by `AvalAiMediaGen` ([`avalai_media.rs`](../../crates/content-engine/src/avalai_media.rs)) against AvalAI; image generation live-verified, video generation (async create→poll→download) tested against a mock, not yet run live. `ContentEngine::create_social_bundle` ([`social.rs`](../../crates/content-engine/src/social.rs)) turns one concept into caption + hashtags + carousel + optional video in a single tenant-aware call — see `TenantRegistry` below.
+
+**Tenant axis** (2026-09-04) — `rusvel-core::tenant` (`TenantId`, `TenantProfile`, `TenantRegistry`); `ContentEngine::register_tenant` / `draft_for_tenant` / `create_social_bundle` are tenant-aware, additive to the pre-existing untenanted API. `gtm-engine` and `harvest-engine` are not yet tenant-aware.
+
 **Job queue worker** — Polls jobs; handles `CodeAnalyze`, `ContentPublish`, `HarvestScan` with `session_id` scoping.
 
 **RusvelBase** — `/api/db/*` routes; UI under `/database/*`.
@@ -173,10 +204,13 @@ Some surface crates (`rusvel-app`, `rusvel-cli`, `rusvel-mcp`, `rusvel-tui`, …
 
 ## 6. Next steps (from gaps + sprint intent)
 
-1. Deepen **GTM** / CRM (beyond OutreachSend worker path) and channel adapters per roadmap.
-2. Add **auth middleware** and a clear model for API keys/sessions if exposing beyond localhost.
-3. Continue **Sprint** themes in [`../plans/sprints.md`](../plans/sprints.md) (reference only).
-4. Re-run **§ How to re-verify** monthly or after large merges; append rows to [`verification-log-2026-03-30.md`](verification-log-2026-03-30.md) or a new dated log.
+1. Run a real `create_social_bundle` call against the live AvalAI API (text+image path — cheap, already proven safe) to see actual output; video generation needs an explicit go-ahead first (cost/duration unconfirmed).
+2. Extend tenant-awareness to `gtm-engine` (outreach/CRM currently single-tenant, unlike `content-engine`).
+3. Onboard a second real tenant (Taban) — the actual test that the tenant axis generalizes, not just works for one client.
+4. Deepen **GTM** / CRM (beyond OutreachSend worker path) and channel adapters per roadmap.
+5. Add **auth middleware** and a clear model for API keys/sessions if exposing beyond localhost.
+6. Continue **Sprint** themes in [`../plans/sprints.md`](../plans/sprints.md) (reference only).
+7. Re-run **§ How to re-verify** monthly or after large merges; append rows to [`verification-log-2026-03-30.md`](verification-log-2026-03-30.md) or a new dated log.
 
 ---
 

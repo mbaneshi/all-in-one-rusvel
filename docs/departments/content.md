@@ -6,10 +6,12 @@
 
 The Content Department handles the full content lifecycle for RUSVEL: AI-powered drafting, multi-platform adaptation (LinkedIn, Twitter/X, DEV.to, Substack), calendar scheduling, human-approved publishing, and engagement analytics. It consumes `code.analyzed` events from the Code department to automatically generate technical blog posts from code snapshots, creating a seamless code-to-content pipeline. Every piece of content must pass a human approval gate (ADR-008) before it can be published.
 
+**2026-09-04:** the department is now tenant-aware (a `TenantRegistry` from `rusvel-core`, additive to the pre-existing untenanted API) and can generate media, not just text — `MediaGenPort`, implemented against AvalAI, covers images (live-verified) and video (async create→poll→download, tested against a mock, not yet run live). `create_social_bundle` turns one concept into a coherent caption + hashtags + carousel + optional video in a single call. See [`docs/superpowers/specs/2026-09-03-rusvel-as-estate-abstraction.md`](../superpowers/specs/2026-09-03-rusvel-as-estate-abstraction.md) for why (RUSVEL as the estate's coordination layer) and [`docs/status/current-state.md`](../status/current-state.md) for current numbers.
+
 ## Engine (`content-engine`)
 
 - Crate: `crates/content-engine/src/lib.rs`
-- Lines: 424 (lib.rs) + submodules (writer, calendar, analytics, adapters, platform, code_bridge)
+- Lines: 595 (lib.rs) + submodules (writer, calendar, analytics, adapters, platform, code_bridge, media_gen, avalai_media, social)
 - Status: **Wired** (real business logic)
 
 ### Public API
@@ -18,7 +20,12 @@ The Content Department handles the full content lifecycle for RUSVEL: AI-powered
 |--------|-----------|-------------|
 | `new` | `fn new(storage, event_bus, agent, jobs) -> Self` | Construct with 4 port dependencies |
 | `register_platform` | `fn register_platform(&self, adapter: Arc<dyn PlatformAdapter>)` | Register a platform adapter for publishing |
-| `draft` | `async fn draft(&self, session_id, topic, kind: ContentKind) -> Result<ContentItem>` | Draft new content via AI agent |
+| `register_media_gen` | `fn register_media_gen(&self, adapter: Arc<dyn MediaGenPort>)` | Register the media-generation adapter (e.g. `AvalAiMediaGen`) used for image/video |
+| `register_tenant` | `fn register_tenant(&self, profile: TenantProfile)` | Register or replace a tenant's profile (voice rules, brand identity) |
+| `tenant` | `fn tenant(&self, id: &TenantId) -> Option<TenantProfile>` | Look up a registered tenant's profile |
+| `draft` | `async fn draft(&self, session_id, topic, kind: ContentKind) -> Result<ContentItem>` | Draft new content via AI agent (untenanted) |
+| `draft_for_tenant` | `async fn draft_for_tenant(&self, session_id, tenant_id, topic, kind) -> Result<ContentItem>` | Draft on behalf of a specific tenant — that tenant's voice rules apply to this call only |
+| `create_social_bundle` | `async fn create_social_bundle(&self, session_id, tenant_id: Option<&TenantId>, concept, options: SocialBundleOptions) -> Result<SocialBundle>` | One concept → caption + hashtags + carousel + optional per-slide images + optional video, in one call |
 | `adapt` | `async fn adapt(&self, session_id, content_id, platform: Platform) -> Result<ContentItem>` | Adapt existing content for a target platform |
 | `publish` | `async fn publish(&self, session_id, content_id, platform) -> Result<PublishResult>` | Publish approved content to a platform (requires Approved status) |
 | `schedule` | `async fn schedule(&self, session_id, content_id, platform, at: DateTime) -> Result<()>` | Schedule content for future publication |
@@ -33,12 +40,16 @@ The Content Department handles the full content lifecycle for RUSVEL: AI-powered
 
 ### Internal Structure
 
-- **`ContentWriter`** (`writer.rs`) -- AI-powered drafting and adaptation. Uses `AgentPort` to generate content. `build_code_prompt()` builds prompts from `CodeAnalysisSummary` for code-to-content.
+- **`ContentWriter`** (`writer.rs`) -- AI-powered drafting and adaptation. Uses `AgentPort` to generate content. `build_code_prompt()` builds prompts from `CodeAnalysisSummary` for code-to-content. `draft_with_voice()` takes an explicit voice-rules override (the tenant-aware path) instead of the writer's shared internal state, so concurrent multi-tenant drafts never race.
 - **`ContentCalendar`** (`calendar.rs`) -- Scheduling engine. Uses `StoragePort` for persistence and `JobPort` for scheduling future publish jobs.
 - **`ContentAnalytics`** (`analytics.rs`) -- Engagement metrics tracking per content item per platform.
 - **`PlatformAdapter` trait** (`platform.rs`) -- Interface for platform-specific publishing. Returns `PublishResult` with URL and timestamp. Has `max_length()` for character-limited platforms.
 - **Platform adapters** (`adapters/`) -- Real implementations for LinkedIn, Twitter, and DEV.to. Each reads API credentials from `ConfigPort`.
 - **`code_bridge`** (`code_bridge.rs`) -- Converts stored `code_analysis` JSON to `CodeAnalysisSummary` for the writer.
+- **`MediaGenPort` trait** (`media_gen.rs`) -- Engine-internal port (not one of `rusvel_core::ports`'s 12 cross-cutting traits — ADR-006 precedent, mirrors `harvest-engine::HarvestSource`; only this engine needs it today). `generate_image` and `generate_video` (default: "not supported", so image-only adapters aren't forced to implement it). `MockMediaGen` for tests.
+- **`AvalAiMediaGen`** (`avalai_media.rs`) -- Real adapter against AvalAI's `/v1/images/generations` and async `/v1/videos` (create → poll → download). Text generation needs no adapter here — AvalAI's chat surface is already OpenAI-compatible, served by `rusvel-llm::OpenAiProvider::with_base_url`.
+- **`SocialContentGenerator`** (`social.rs`) -- Drafts caption + hashtags + carousel-slide text in one structured `AgentPort` call (a strict JSON-output contract, parsed and validated) so the pieces stay coherent with each other.
+- **`TenantRegistry` / `TenantProfile` / `TenantId`** -- Live in `rusvel-core::tenant`, not this crate (shared across engines that need the tenant axis, though only `content-engine` uses it today).
 
 ### Content Kinds
 
