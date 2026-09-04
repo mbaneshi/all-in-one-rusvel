@@ -22,14 +22,17 @@ pub mod calendar;
 pub mod code_bridge;
 pub mod media_gen;
 pub mod platform;
+pub mod social;
 pub mod writer;
 
 pub use adapters::devto::DevToAdapter;
 pub use analytics::ContentAnalytics;
 pub use avalai_media::AvalAiMediaGen;
 pub use calendar::{ContentCalendar, ScheduledPost};
+pub use social::{CarouselSlide, SocialBundle, SocialBundleOptions, SocialContentGenerator};
 pub use media_gen::{
-    GeneratedImage, ImageGenRequest, ImageGenResult, ImagePayload, MediaGenPort, MockMediaGen,
+    GeneratedImage, GeneratedVideo, ImageGenRequest, ImageGenResult, ImagePayload, MediaGenPort,
+    MockMediaGen, VideoGenRequest,
 };
 pub use platform::{MockPlatformAdapter, PlatformAdapter, PostMetrics, PublishResult};
 pub use writer::{ContentReview, ContentWriter, build_code_prompt};
@@ -63,6 +66,7 @@ pub struct ContentEngine {
     adapters: std::sync::Mutex<HashMap<String, Arc<dyn PlatformAdapter>>>,
     media_gen: std::sync::Mutex<Option<Arc<dyn MediaGenPort>>>,
     tenants: TenantRegistry,
+    social: SocialContentGenerator,
 }
 
 impl ContentEngine {
@@ -73,6 +77,7 @@ impl ContentEngine {
         jobs: Arc<dyn JobPort>,
     ) -> Self {
         Self {
+            social: SocialContentGenerator::new(Arc::clone(&agent)),
             writer: ContentWriter::new(agent),
             calendar: ContentCalendar::new(Arc::clone(&storage), jobs),
             analytics: ContentAnalytics::new(Arc::clone(&storage)),
@@ -191,6 +196,94 @@ impl ContentEngine {
         self.emit(events::CONTENT_DRAFTED, Some(*session_id), &item.id)
             .await?;
         Ok(item)
+    }
+
+    /// One concept → a full [`SocialBundle`]: caption, hashtags, and a
+    /// carousel, optionally with per-slide images and a video — all from a
+    /// single idea, in one call.
+    ///
+    /// Uses the tenant's registered voice rules when `tenant_id` is given
+    /// (same lookup as [`Self::draft_for_tenant`]) — text drafting goes
+    /// through [`AgentPort`] (ADR-009), media generation through whatever
+    /// [`MediaGenPort`] was registered via [`Self::register_media_gen`].
+    /// Image/video generation only happen when `options` asks for them —
+    /// see [`SocialBundleOptions`]'s doc comment on why that's opt-in.
+    pub async fn create_social_bundle(
+        &self,
+        session_id: &SessionId,
+        tenant_id: Option<&TenantId>,
+        concept: &str,
+        options: SocialBundleOptions,
+    ) -> Result<SocialBundle> {
+        let voice_rules = match tenant_id {
+            Some(id) => Some(
+                self.tenants
+                    .get(id)
+                    .ok_or_else(|| RusvelError::NotFound {
+                        kind: "TenantProfile".into(),
+                        id: id.to_string(),
+                    })?
+                    .voice_rules,
+            ),
+            None => None,
+        };
+
+        let (caption, hashtags, slide_pairs) = self
+            .social
+            .draft_bundle_text(
+                session_id,
+                concept,
+                voice_rules.as_deref(),
+                options.slide_count,
+            )
+            .await?;
+
+        let media = self.media_gen.lock().unwrap().clone();
+
+        let mut carousel = Vec::with_capacity(slide_pairs.len());
+        for (heading, text) in slide_pairs {
+            let image = if options.generate_slide_images {
+                let adapter = media.as_ref().ok_or_else(|| {
+                    RusvelError::Validation(
+                        "generate_slide_images was requested but no media-gen adapter is registered"
+                            .into(),
+                    )
+                })?;
+                let prompt = format!("{concept} — {heading}: {text}");
+                let result = adapter.generate_image(ImageGenRequest::new(prompt)).await?;
+                result.images.into_iter().next()
+            } else {
+                None
+            };
+            carousel.push(CarouselSlide {
+                heading,
+                text,
+                image,
+            });
+        }
+
+        let video = if options.generate_video {
+            let adapter = media.as_ref().ok_or_else(|| {
+                RusvelError::Validation(
+                    "generate_video was requested but no media-gen adapter is registered".into(),
+                )
+            })?;
+            Some(
+                adapter
+                    .generate_video(VideoGenRequest::new(format!("{concept} — {caption}")))
+                    .await?,
+            )
+        } else {
+            None
+        };
+
+        Ok(SocialBundle {
+            concept: concept.to_string(),
+            caption,
+            hashtags,
+            carousel,
+            video,
+        })
     }
 
     /// Adapt existing content for a target platform.

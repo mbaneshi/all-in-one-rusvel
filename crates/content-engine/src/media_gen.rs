@@ -53,7 +53,44 @@ pub struct ImageGenResult {
     pub cost_irt: Option<f64>,
 }
 
-/// Generate images from a text prompt.
+/// Request to generate a video clip from a text prompt.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoGenRequest {
+    pub prompt: String,
+    pub model: Option<String>,
+    /// Clip length in seconds. Model-dependent valid values (e.g. Sora wants
+    /// a multiple of 4) — validated by the provider, not here.
+    pub seconds: Option<String>,
+}
+
+impl VideoGenRequest {
+    pub fn new(prompt: impl Into<String>) -> Self {
+        Self {
+            prompt: prompt.into(),
+            model: None,
+            seconds: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GeneratedVideo {
+    pub payload: ImagePayload,
+    pub model: String,
+}
+
+/// Generate images and video clips from a text prompt.
+///
+/// Two different calling shapes on purpose: image generation is a single
+/// synchronous request; video generation is create → poll → download —
+/// AvalAI itself warns generation "starts billing the moment the request is
+/// accepted" and that a dropped connection must never be blindly retried
+/// (`~/aval-ai/MEDIA_APIS.md`). `generate_video` hides that poll loop behind
+/// one `async fn` so callers keep a uniform port interface, but it is a
+/// genuinely slower, costlier, more failure-prone call than
+/// [`Self::generate_image`] — callers should treat it accordingly (an
+/// explicit user go-ahead before spending on it, not a default step in a
+/// bundle).
 #[async_trait]
 pub trait MediaGenPort: Send + Sync {
     /// Human-readable name of this adapter.
@@ -61,6 +98,16 @@ pub trait MediaGenPort: Send + Sync {
 
     /// Generate one or more images for the given request.
     async fn generate_image(&self, request: ImageGenRequest) -> Result<ImageGenResult>;
+
+    /// Generate a video clip for the given request. Not every adapter
+    /// supports this (e.g. it makes no sense for a non-media provider) —
+    /// default errors clearly rather than silently doing nothing.
+    async fn generate_video(&self, _request: VideoGenRequest) -> Result<GeneratedVideo> {
+        Err(rusvel_core::error::RusvelError::Llm(format!(
+            "{} does not support video generation",
+            self.name()
+        )))
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════

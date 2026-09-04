@@ -271,6 +271,44 @@ impl AgentPort for RecordingAgent {
     }
 }
 
+/// Fake agent that returns a canned social-bundle JSON reply and records the
+/// `instructions` it was given, for the `create_social_bundle` tests.
+struct JsonBundleAgent {
+    reply: String,
+    last_instructions: Mutex<Option<String>>,
+}
+impl JsonBundleAgent {
+    fn new(reply: impl Into<String>) -> Self {
+        Self {
+            reply: reply.into(),
+            last_instructions: Mutex::new(None),
+        }
+    }
+}
+#[async_trait]
+impl AgentPort for JsonBundleAgent {
+    async fn create(&self, config: AgentConfig) -> Result<RunId> {
+        *self.last_instructions.lock().unwrap() = config.instructions;
+        Ok(RunId::new())
+    }
+    async fn run(&self, _: &RunId, _: Content) -> Result<AgentOutput> {
+        Ok(AgentOutput {
+            run_id: RunId::new(),
+            content: Content::text(self.reply.clone()),
+            tool_calls: 0,
+            usage: LlmUsage::default(),
+            cost_estimate: 0.0,
+            metadata: serde_json::json!({}),
+        })
+    }
+    async fn stop(&self, _: &RunId) -> Result<()> {
+        Ok(())
+    }
+    async fn status(&self, _: &RunId) -> Result<AgentStatus> {
+        Ok(AgentStatus::Completed)
+    }
+}
+
 /// Fake job port that just records enqueued jobs.
 struct FakeJobPort {
     jobs: Mutex<Vec<NewJob>>,
@@ -446,6 +484,173 @@ async fn draft_for_tenant_injects_the_tenant_s_real_voice_rules() {
     let second_instructions = agent.last_instructions.lock().unwrap().clone().unwrap();
     assert!(second_instructions.contains("clinical precision"));
     assert!(!second_instructions.contains("hype-thread guru"));
+}
+
+// ── create_social_bundle ────────────────────────────────────────────
+
+const SAMPLE_BUNDLE_REPLY: &str = r##"{
+    "caption": "Shipped the tenant axis today.",
+    "hashtags": ["#buildinpublic", "#rust"],
+    "slides": [
+        {"heading": "The problem", "text": "content-engine assumed one client."},
+        {"heading": "The fix", "text": "TenantRegistry, additive, zero breaking changes."}
+    ]
+}"##;
+
+fn social_test_engine(
+    reply: &str,
+) -> (ContentEngine, Arc<JsonBundleAgent>) {
+    let storage = Arc::new(TestStorage::new());
+    let events = Arc::new(RecordingEventBus::new());
+    let agent = Arc::new(JsonBundleAgent::new(reply));
+    let jobs = Arc::new(FakeJobPort::new());
+    let engine = ContentEngine::new(
+        storage as Arc<dyn StoragePort>,
+        events as Arc<dyn EventPort>,
+        Arc::clone(&agent) as Arc<dyn AgentPort>,
+        jobs as Arc<dyn JobPort>,
+    );
+    (engine, agent)
+}
+
+#[tokio::test]
+async fn create_social_bundle_parses_caption_hashtags_and_slides() {
+    let (engine, _) = social_test_engine(SAMPLE_BUNDLE_REPLY);
+    let sid = SessionId::new();
+
+    let bundle = engine
+        .create_social_bundle(
+            &sid,
+            None,
+            "shipping the tenant axis",
+            SocialBundleOptions {
+                slide_count: 2,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(bundle.caption, "Shipped the tenant axis today.");
+    assert_eq!(bundle.hashtags, vec!["#buildinpublic", "#rust"]);
+    assert_eq!(bundle.carousel.len(), 2);
+    assert_eq!(bundle.carousel[0].heading, "The problem");
+    assert_eq!(bundle.carousel[1].heading, "The fix");
+    assert!(bundle.carousel.iter().all(|s| s.image.is_none()));
+    assert!(bundle.video.is_none());
+}
+
+#[tokio::test]
+async fn create_social_bundle_uses_the_tenant_s_voice() {
+    let (engine, agent) = social_test_engine(SAMPLE_BUNDLE_REPLY);
+    engine.register_tenant(TenantProfile::new(
+        "mbaneshi",
+        "Mehdi Baneshi",
+        "allergic to fluff, no hype-thread guru tone",
+    ));
+    let sid = SessionId::new();
+
+    engine
+        .create_social_bundle(
+            &sid,
+            Some(&TenantId::new("mbaneshi")),
+            "shipping the tenant axis",
+            SocialBundleOptions::default(),
+        )
+        .await
+        .unwrap();
+
+    let instructions = agent.last_instructions.lock().unwrap().clone().unwrap();
+    assert!(instructions.contains("allergic to fluff"));
+}
+
+#[tokio::test]
+async fn create_social_bundle_errors_for_unregistered_tenant() {
+    let (engine, _) = social_test_engine(SAMPLE_BUNDLE_REPLY);
+    let sid = SessionId::new();
+
+    let err = engine
+        .create_social_bundle(
+            &sid,
+            Some(&TenantId::new("nobody")),
+            "x",
+            SocialBundleOptions::default(),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(err, RusvelError::NotFound { .. }));
+}
+
+#[tokio::test]
+async fn create_social_bundle_attaches_an_image_per_slide_when_requested() {
+    let (engine, _) = social_test_engine(SAMPLE_BUNDLE_REPLY);
+    engine.register_media_gen(Arc::new(MockMediaGen));
+    let sid = SessionId::new();
+
+    let bundle = engine
+        .create_social_bundle(
+            &sid,
+            None,
+            "shipping the tenant axis",
+            SocialBundleOptions {
+                slide_count: 2,
+                generate_slide_images: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(bundle.carousel.len(), 2);
+    assert!(
+        bundle.carousel.iter().all(|s| s.image.is_some()),
+        "every slide should have an image when generate_slide_images is set"
+    );
+}
+
+#[tokio::test]
+async fn create_social_bundle_errors_asking_for_images_without_a_media_gen_adapter() {
+    let (engine, _) = social_test_engine(SAMPLE_BUNDLE_REPLY);
+    let sid = SessionId::new();
+
+    let err = engine
+        .create_social_bundle(
+            &sid,
+            None,
+            "x",
+            SocialBundleOptions {
+                generate_slide_images: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(err, RusvelError::Validation(_)));
+}
+
+#[tokio::test]
+async fn create_social_bundle_propagates_video_unsupported_from_the_adapter() {
+    let (engine, _) = social_test_engine(SAMPLE_BUNDLE_REPLY);
+    // MockMediaGen doesn't override generate_video, so it inherits
+    // MediaGenPort's default "does not support video generation" error —
+    // this proves that error surfaces through the orchestrator rather than
+    // being swallowed.
+    engine.register_media_gen(Arc::new(MockMediaGen));
+    let sid = SessionId::new();
+
+    let err = engine
+        .create_social_bundle(
+            &sid,
+            None,
+            "x",
+            SocialBundleOptions {
+                generate_video: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("does not support video generation"));
 }
 
 #[tokio::test]

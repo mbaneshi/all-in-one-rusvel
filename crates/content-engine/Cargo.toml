@@ -16,6 +16,8 @@ chrono = { workspace = true }
 uuid = { workspace = true }
 tracing = { workspace = true }
 reqwest = { workspace = true }
+tokio = { workspace = true, features = ["time"] }
+base64 = "0.22"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros"] }
