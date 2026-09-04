@@ -235,6 +235,42 @@ impl AgentPort for FakeAgent {
     }
 }
 
+/// Fake agent that records the `instructions` it was given, so tests can
+/// assert a tenant's voice rules actually reached the LLM call.
+struct RecordingAgent {
+    last_instructions: Mutex<Option<String>>,
+}
+impl RecordingAgent {
+    fn new() -> Self {
+        Self {
+            last_instructions: Mutex::new(None),
+        }
+    }
+}
+#[async_trait]
+impl AgentPort for RecordingAgent {
+    async fn create(&self, config: AgentConfig) -> Result<RunId> {
+        *self.last_instructions.lock().unwrap() = config.instructions;
+        Ok(RunId::new())
+    }
+    async fn run(&self, _: &RunId, _: Content) -> Result<AgentOutput> {
+        Ok(AgentOutput {
+            run_id: RunId::new(),
+            content: Content::text("# Generated Title\n\nbody"),
+            tool_calls: 0,
+            usage: LlmUsage::default(),
+            cost_estimate: 0.0,
+            metadata: serde_json::json!({}),
+        })
+    }
+    async fn stop(&self, _: &RunId) -> Result<()> {
+        Ok(())
+    }
+    async fn status(&self, _: &RunId) -> Result<AgentStatus> {
+        Ok(AgentStatus::Completed)
+    }
+}
+
 /// Fake job port that just records enqueued jobs.
 struct FakeJobPort {
     jobs: Mutex<Vec<NewJob>>,
@@ -325,6 +361,91 @@ async fn draft_creates_content_in_draft_status() {
             .emitted_kinds()
             .contains(&events::CONTENT_DRAFTED.to_string())
     );
+}
+
+#[tokio::test]
+async fn draft_for_tenant_errors_when_tenant_unregistered() {
+    let (engine, _, _, _) = test_engine();
+    let sid = SessionId::new();
+    let err = engine
+        .draft_for_tenant(
+            &sid,
+            &TenantId::new("mbaneshi"),
+            "why this site is a folder of markdown",
+            ContentKind::Blog,
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(err, RusvelError::NotFound { .. }));
+}
+
+#[tokio::test]
+async fn draft_for_tenant_injects_the_tenant_s_real_voice_rules() {
+    // Real brand-kernel.yaml voice, condensed — not invented for this test.
+    // Source: mbaneshi-ir-site/branding/brand-kernel.yaml `voice.we_sound_like`
+    // and `voice.we_never_sound_like` (verified 2026-09-04).
+    let mbaneshi_voice = "A sharp solo builder talking to a peer — shows the \
+        real work, the real numbers, and the real doubt. Confident without \
+        bragging; a little dry humor; allergic to fluff. Never sound like a \
+        hype-thread guru, a faceless SaaS blog, an AI press release, or a \
+        motivational-poster account.";
+
+    let storage = Arc::new(TestStorage::new());
+    let events = Arc::new(RecordingEventBus::new());
+    let agent = Arc::new(RecordingAgent::new());
+    let jobs = Arc::new(FakeJobPort::new());
+    let engine = ContentEngine::new(
+        storage as Arc<dyn StoragePort>,
+        events as Arc<dyn EventPort>,
+        Arc::clone(&agent) as Arc<dyn AgentPort>,
+        jobs as Arc<dyn JobPort>,
+    );
+
+    engine.register_tenant(TenantProfile::new(
+        "mbaneshi",
+        "Mehdi Baneshi",
+        mbaneshi_voice,
+    ));
+    assert_eq!(
+        engine.tenant(&TenantId::new("mbaneshi")).unwrap().name,
+        "Mehdi Baneshi"
+    );
+
+    let sid = SessionId::new();
+    let item = engine
+        .draft_for_tenant(
+            &sid,
+            &TenantId::new("mbaneshi"),
+            "why this site is a folder of markdown",
+            ContentKind::Blog,
+        )
+        .await
+        .unwrap();
+    assert_eq!(item.status, ContentStatus::Draft);
+
+    let instructions = agent.last_instructions.lock().unwrap().clone().unwrap();
+    assert!(
+        instructions.contains("allergic to fluff"),
+        "the tenant's real voice rules must reach the LLM call, got: {instructions}"
+    );
+    assert!(instructions.contains("hype-thread guru"));
+
+    // A second tenant with different voice rules must not see mbaneshi's —
+    // proves per-call isolation, not shared mutable state (see
+    // `ContentWriter::draft_with_voice`'s doc comment on why this matters).
+    engine.register_tenant(TenantProfile::new("taban", "Taban Clinic", "Warm, reassuring, clinical precision."));
+    engine
+        .draft_for_tenant(
+            &sid,
+            &TenantId::new("taban"),
+            "new patient intake flow",
+            ContentKind::Blog,
+        )
+        .await
+        .unwrap();
+    let second_instructions = agent.last_instructions.lock().unwrap().clone().unwrap();
+    assert!(second_instructions.contains("clinical precision"));
+    assert!(!second_instructions.contains("hype-thread guru"));
 }
 
 #[tokio::test]

@@ -35,6 +35,7 @@ pub mod id;
 pub mod ports;
 pub mod registry;
 pub mod rrf;
+pub mod tenant;
 pub mod terminal;
 
 // ── Convenience re-exports ─────────────────────────────────────────
@@ -48,4 +49,5 @@ pub use engine::Engine;
 pub use error::{Result, RusvelError};
 pub use id::*;
 pub use rrf::{RRF_K_DEFAULT, reciprocal_rank_fusion};
+pub use tenant::{TenantProfile, TenantRegistry};
 pub use terminal::{Layout, Pane, PaneSize, PaneSource, PaneStatus, Window, WindowSource};

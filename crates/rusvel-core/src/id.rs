@@ -107,6 +107,46 @@ define_id!(
     PaneId,
 );
 
+/// Identifies a tenant — a business RUSVEL coordinates for (e.g. `mbaneshi`,
+/// `taban`, `houshkar`).
+///
+/// Deliberately **not** a [`define_id!`] UUID: a tenant id is a small, stable,
+/// human-chosen slug used for lookup and routing (config keys, log lines,
+/// `capability-tenant-infra`'s own tenant folders), not an ephemeral record
+/// identifier. A random UUID would just add an indirection nobody needs.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct TenantId(String);
+
+impl TenantId {
+    /// Wrap a slug. Does not validate shape — callers control the slug set.
+    pub fn new(slug: impl Into<String>) -> Self {
+        Self(slug.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for TenantId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl From<&str> for TenantId {
+    fn from(s: &str) -> Self {
+        Self::new(s)
+    }
+}
+
+impl From<String> for TenantId {
+    fn from(s: String) -> Self {
+        Self::new(s)
+    }
+}
+
 // ── Tests ──────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -141,5 +181,23 @@ mod tests {
         let _s: SessionId = SessionId::new();
         let _r: RunId = RunId::new();
         // `_s == _r` would not compile — that's the point.
+    }
+
+    #[test]
+    fn tenant_id_is_a_stable_slug_not_a_uuid() {
+        let a = TenantId::new("mbaneshi");
+        let b = TenantId::new("mbaneshi");
+        assert_eq!(a, b, "same slug must compare equal — unlike the UUID ids above");
+        assert_eq!(a.as_str(), "mbaneshi");
+        assert_eq!(a.to_string(), "mbaneshi");
+    }
+
+    #[test]
+    fn tenant_id_roundtrips_through_serde() {
+        let id = TenantId::new("taban");
+        let json = serde_json::to_string(&id).unwrap();
+        assert_eq!(json, "\"taban\"");
+        let back: TenantId = serde_json::from_str(&json).unwrap();
+        assert_eq!(id, back);
     }
 }

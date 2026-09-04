@@ -13,6 +13,7 @@ use rusvel_core::engine::Engine;
 use rusvel_core::error::{Result, RusvelError};
 use rusvel_core::id::*;
 use rusvel_core::ports::{AgentPort, EventPort, JobPort, StoragePort};
+use rusvel_core::{TenantId, TenantProfile, TenantRegistry};
 
 pub mod adapters;
 pub mod analytics;
@@ -61,6 +62,7 @@ pub struct ContentEngine {
     analytics: ContentAnalytics,
     adapters: std::sync::Mutex<HashMap<String, Arc<dyn PlatformAdapter>>>,
     media_gen: std::sync::Mutex<Option<Arc<dyn MediaGenPort>>>,
+    tenants: TenantRegistry,
 }
 
 impl ContentEngine {
@@ -76,6 +78,7 @@ impl ContentEngine {
             analytics: ContentAnalytics::new(Arc::clone(&storage)),
             adapters: std::sync::Mutex::new(HashMap::new()),
             media_gen: std::sync::Mutex::new(None),
+            tenants: TenantRegistry::new(),
             storage,
             event_bus,
         }
@@ -123,6 +126,18 @@ impl ContentEngine {
             })
     }
 
+    /// Register or replace a tenant's profile (voice rules, brand identity).
+    /// The tenant axis this content-engine coordinates across — mbaneshi is
+    /// tenant #1, more follow as they're onboarded.
+    pub fn register_tenant(&self, profile: TenantProfile) {
+        self.tenants.register(profile);
+    }
+
+    /// Look up a registered tenant's profile.
+    pub fn tenant(&self, id: &TenantId) -> Option<TenantProfile> {
+        self.tenants.get(id)
+    }
+
     // ── Domain operations ──────────────────────────────────────────
 
     /// Draft new content via AI.
@@ -133,6 +148,38 @@ impl ContentEngine {
         kind: ContentKind,
     ) -> Result<ContentItem> {
         let item = self.writer.draft(session_id, topic, kind).await?;
+        self.storage
+            .objects()
+            .put(
+                "content",
+                &item.id.to_string(),
+                serde_json::to_value(&item)?,
+            )
+            .await?;
+        self.emit(events::CONTENT_DRAFTED, Some(*session_id), &item.id)
+            .await?;
+        Ok(item)
+    }
+
+    /// Draft new content on behalf of a specific tenant — the tenant's
+    /// registered voice rules apply to this call only, leaving any global
+    /// [`Self::set_voice_rules`] state untouched for callers that don't use
+    /// tenants. Errors if `tenant_id` was never [`Self::register_tenant`]ed.
+    pub async fn draft_for_tenant(
+        &self,
+        session_id: &SessionId,
+        tenant_id: &TenantId,
+        topic: &str,
+        kind: ContentKind,
+    ) -> Result<ContentItem> {
+        let profile = self.tenants.get(tenant_id).ok_or_else(|| RusvelError::NotFound {
+            kind: "TenantProfile".into(),
+            id: tenant_id.to_string(),
+        })?;
+        let item = self
+            .writer
+            .draft_with_voice(session_id, topic, kind, &profile.voice_rules)
+            .await?;
         self.storage
             .objects()
             .put(

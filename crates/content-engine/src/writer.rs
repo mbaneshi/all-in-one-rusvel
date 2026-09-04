@@ -133,8 +133,16 @@ impl ContentWriter {
     }
 
     fn system_prompt(&self, role: &str) -> String {
+        let guard = self.voice_rules.read().unwrap();
+        Self::system_prompt_with(role, guard.as_deref())
+    }
+
+    /// Build the system prompt from an explicit voice-rules value rather than
+    /// the writer's shared internal state. Used by [`Self::draft_with_voice`]
+    /// so concurrent multi-tenant drafts never race on the same `RwLock`.
+    fn system_prompt_with(role: &str, rules: Option<&str>) -> String {
         let base = format!("You are {role}.");
-        match self.voice_rules.read().unwrap().as_deref() {
+        match rules {
             Some(rules) => format!("{base}\n\n--- Voice & Style Rules ---\n{rules}"),
             None => base,
         }
@@ -147,6 +155,32 @@ impl ContentWriter {
         topic: &str,
         kind: ContentKind,
     ) -> Result<ContentItem> {
+        self.draft_inner(session_id, topic, kind, self.system_prompt("a professional content writer"))
+            .await
+    }
+
+    /// Same as [`Self::draft`], but with an explicit voice-rules value
+    /// instead of the writer's shared internal state — the tenant-aware
+    /// path. Each call is independent, so drafting for one tenant never
+    /// affects another's voice, even against the same `ContentWriter`.
+    pub async fn draft_with_voice(
+        &self,
+        session_id: &SessionId,
+        topic: &str,
+        kind: ContentKind,
+        voice_rules: &str,
+    ) -> Result<ContentItem> {
+        let prompt = Self::system_prompt_with("a professional content writer", Some(voice_rules));
+        self.draft_inner(session_id, topic, kind, prompt).await
+    }
+
+    async fn draft_inner(
+        &self,
+        session_id: &SessionId,
+        topic: &str,
+        kind: ContentKind,
+        instructions: String,
+    ) -> Result<ContentItem> {
         let prompt = format!(
             "Write a {kind:?} article about: {topic}\n\n\
              Return the result as markdown. Include a title on the first line \
@@ -157,7 +191,7 @@ impl ContentWriter {
             session_id: *session_id,
             model: None,
             tools: vec![],
-            instructions: Some(self.system_prompt("a professional content writer")),
+            instructions: Some(instructions),
             budget_limit: None,
             max_iterations: None,
             permission_mode: Default::default(),
